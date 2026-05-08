@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from "react";
+import { LoadScript } from "@react-google-maps/api";
 import MapView from "../components/MapView";
 import SearchBar from "../components/SearchBar";
 import PlaceCard from "../components/PlaceCard";
-import { LoadScript } from "@react-google-maps/api";
+import AgentSearchPanel from "../components/AgentSearchPanel";
 
-
-
-function App() {
+function Home() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [routeQuery, setRouteQuery] = useState("");
@@ -14,114 +13,51 @@ function App() {
   const [path, setPath] = useState([]);
   const [start, setStart] = useState(null);
   const [end, setEnd] = useState(null);
-  const [expandedPlace, setExpandedPlace] =
-  useState(null);
+  const [expandedPlace, setExpandedPlace] = useState(null);
   const [center, setCenter] = useState({
-  lat: 38.9182,
-  lng: 121.6283,
-});
-const [userLocation, setUserLocation] = useState(null);
-useEffect(() => {
-  navigator.geolocation.getCurrentPosition(
-    (position) => {
-      const loc = {
-        lat: position.coords.latitude,
-        lng: position.coords.longitude,
-      };
+    lat: 38.9182,
+    lng: 121.6283,
+  });
+  const [userLocation, setUserLocation] = useState(null);
 
-      setUserLocation(loc); // ⭐ 保存真实用户位置
-      setCenter(loc);       // ⭐ 地图初始中心
-    },
-    (error) => {
-      console.log("定位失败:", error);
-    }
-  );
-}, []);
+  useEffect(() => {
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const loc = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        };
 
+        setUserLocation(loc);
+        setCenter(loc);
+      },
+      (error) => {
+        console.log("Location failed:", error);
+      }
+    );
+  }, []);
 
   const searchPlaces = async () => {
     const res = await fetch(
-      `http://localhost:3001/search?q=${query}&lat=${center.lat}&lng=${center.lng}`
+      `http://localhost:3001/search?q=${encodeURIComponent(query)}&lat=${
+        center.lat
+      }&lng=${center.lng}`
     );
     const data = await res.json();
-    setResults(data);
+    setResults(Array.isArray(data) ? data : []);
   };
 
-  
-const getRoute = async () => {
-  try {
-    // ⭐ 1. 清空旧路线（关键）
-    setPath([]);
-    setRouteResult(null);
-
-    const res = await fetch(
-      `http://localhost:3001/route?q=${encodeURIComponent(routeQuery)}`
-    );
-    const data = await res.json();
-
+  const applyRouteToMap = (data) => {
     setRouteResult(data);
 
-    // ⭐ 2. 确保 Google 已加载
     if (!window.google) {
-      console.log("Google Maps 未加载");
+      console.log("Google Maps is not loaded");
       return;
     }
 
-    // ⭐ 3. 解码 polyline
     const decoded = window.google.maps.geometry.encoding.decodePath(
       data.polyline
     );
-
-    // ⭐ 4. 转换成“全新数组”（关键！！！）
-    const newPath = decoded.map((p) => ({
-      lat: p.lat(),
-      lng: p.lng(),
-    }));
-
-    // ⭐ 5. 设置新路线
-    setPath(newPath);
-setStart(newPath[0]);
-setEnd(newPath[newPath.length - 1]);
-  } catch (err) {
-    console.error("获取路线失败:", err);
-  }
-};
-
-
-const handleRouteToPlace = async (place) => {
-  try {
-    // 🌍 Step 1：经纬度转地址
-    const geoRes = await fetch(
-      `http://localhost:3001/reverse-geocode?lat=${userLocation.lat}&lng=${userLocation.lng}`
-    );
-
-    const geoData = await geoRes.json();
-
-    const fromAddress = geoData.address;
-
-    console.log("我的地址:", fromAddress);
-
-    // 🚗 Step 2：拼 route query
-    const query = `${fromAddress} to ${place.address}`;
-
-    setRouteQuery(query);
-
-    // 🚀 Step 3：请求路线
-    const res = await fetch(
-      `http://localhost:3001/route?q=${encodeURIComponent(query)}`
-    );
-
-    const data = await res.json();
-
-    setRouteResult(data);
-
-    // 🗺️ Step 4：解析路线
-    if (!window.google) return;
-
-    const decoded =
-      window.google.maps.geometry.encoding.decodePath(
-        data.polyline
-      );
 
     const newPath = decoded.map((p) => ({
       lat: p.lat(),
@@ -130,101 +66,151 @@ const handleRouteToPlace = async (place) => {
 
     setPath(newPath);
     setStart(newPath[0]);
-    // ⭐ 终点
     setEnd(newPath[newPath.length - 1]);
 
-    // ⭐ 地图居中
-    setCenter(
-      newPath[Math.floor(newPath.length / 2)]
-    );
-  } catch (err) {
-    console.error("自动路线失败:", err);
-  }
-};
+    if (newPath.length > 0) {
+      setCenter(newPath[Math.floor(newPath.length / 2)]);
+    }
+  };
+
+  const getRoute = async () => {
+    try {
+      setPath([]);
+      setRouteResult(null);
+
+      const res = await fetch(
+        `http://localhost:3001/route?q=${encodeURIComponent(routeQuery)}`
+      );
+      const data = await res.json();
+
+      applyRouteToMap(data);
+    } catch (err) {
+      console.error("Route failed:", err);
+    }
+  };
+
+  const handleRouteToPlace = async (place) => {
+    try {
+      let fromAddress = `${center.lat},${center.lng}`;
+
+      if (userLocation) {
+        const geoRes = await fetch(
+          `http://localhost:3001/reverse-geocode?lat=${userLocation.lat}&lng=${userLocation.lng}`
+        );
+        const geoData = await geoRes.json();
+
+        if (geoData.address) {
+          fromAddress = geoData.address;
+        }
+      }
+
+      const nextRouteQuery = `${fromAddress} to ${place.address}`;
+      setRouteQuery(nextRouteQuery);
+
+      const res = await fetch(
+        `http://localhost:3001/route?q=${encodeURIComponent(nextRouteQuery)}`
+      );
+      const data = await res.json();
+
+      applyRouteToMap(data);
+    } catch (err) {
+      console.error("Auto route failed:", err);
+    }
+  };
+
   return (
     <LoadScript
-  googleMapsApiKey="AIzaSyDmJYMiPEdbrS6_Nfn_QwfSPYdlWjieh50"
-  libraries={["geometry"]}
->
-    <div style={{ padding: 20 }}>
-      <h2>Google Maps Search</h2>
-
-      <SearchBar
-  query={query}
-  setQuery={setQuery}
-  searchPlaces={searchPlaces}
-/>
-
-    <ul
-      style={{
-        listStyle: "none",
-        padding: 0,
-
-       display: "flex",
-flexWrap: "wrap",
-gap: 20,
-alignItems: "flex-start",
-      }}
+      googleMapsApiKey="AIzaSyDmJYMiPEdbrS6_Nfn_QwfSPYdlWjieh50"
+      libraries={["geometry"]}
     >
-  
-    {Array.isArray(results) &&
-  results.map((place, index) => (
-<PlaceCard
-  key={index}
-  place={place}
+      <div style={{ padding: 20 }}>
+        <h2>Google Maps Search</h2>
 
-  handleRouteToPlace={handleRouteToPlace}
+        <SearchBar
+          query={query}
+          setQuery={setQuery}
+          searchPlaces={searchPlaces}
+        />
 
-  expandedPlace={expandedPlace}
-  setExpandedPlace={setExpandedPlace}
+        <ul
+          style={{
+            listStyle: "none",
+            padding: 0,
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 20,
+            alignItems: "flex-start",
+          }}
+        >
+          {results.map((place, index) => (
+            <PlaceCard
+              key={`${place.name}-${index}`}
+              place={place}
+              handleRouteToPlace={handleRouteToPlace}
+              expandedPlace={expandedPlace}
+              setExpandedPlace={setExpandedPlace}
+              path={path}
+              center={center}
+              userLocation={userLocation}
+              start={start}
+              end={end}
+            />
+          ))}
+        </ul>
 
-  path={path}
-  center={center}
-  userLocation={userLocation}
-  start={start}
-  end={end}
-/>
-))}
-</ul>
-       {/* 🚗 新增路线对话框 */}
-    <div style={{ marginTop: 40 }}>
-      <h2>Map
-路线查询
-      </h2>
+        <div style={{ marginTop: 40 }}>
+          <h2>Route Search</h2>
 
-      <input
-        value={routeQuery}
-        onChange={(e) => setRouteQuery(e.target.value)}
-        placeholder="输入：从A到B怎么走"
-        style={{ width: 300 }}
-      />
+          <input
+            value={routeQuery}
+            onChange={(e) => setRouteQuery(e.target.value)}
+            placeholder="Enter a route, for example: University of Auckland to Sky Tower"
+            style={{
+              width: 360,
+              maxWidth: "100%",
+              padding: 10,
+              borderRadius: 8,
+              border: "1px solid #ddd",
+            }}
+          />
 
-      <button onClick={getRoute} style={{ marginLeft: 10 }}>
-        查询路线
-      </button>
+          <button
+            onClick={getRoute}
+            style={{
+              marginLeft: 10,
+              padding: "10px 16px",
+              borderRadius: 8,
+              border: "none",
+              background: "#1a73e8",
+              color: "white",
+              cursor: "pointer",
+            }}
+          >
+            Search Route
+          </button>
 
-      {routeResult && (
-        <div style={{ marginTop: 20 }}>
-          <p>📍 起点: {routeResult.from}</p>
-          <p>🏁 终点: {routeResult.to}</p>
-          <p>📏 距离: {routeResult.distance}</p>
-          <p>⏱️ 时间: {routeResult.duration}</p>
+          {routeResult && (
+            <div style={{ marginTop: 20 }}>
+              <p>From: {routeResult.from}</p>
+              <p>To: {routeResult.to}</p>
+              <p>Distance: {routeResult.distance}</p>
+              <p>Duration: {routeResult.duration}</p>
+            </div>
+          )}
         </div>
-      )}
-    </div>
 
-    <MapView
-  path={path}
-  center={center}
-  userLocation={userLocation}
-  start={start}
-  end={end}
-/>
+        <MapView
+          path={path}
+          center={center}
+          userLocation={userLocation}
+          start={start}
+          end={end}
+        />
 
-
-    </div>
+        <AgentSearchPanel center={center} />
+      </div>
     </LoadScript>
   );
 }
 
-export default App;
+export default Home;
