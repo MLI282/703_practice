@@ -14,7 +14,9 @@
   "dependencies": {
     "axios": "^1.15.0",
     "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "google-search-results-nodejs": "^2.1.0",
     "openai": "^6.34.0"
   }
 }
