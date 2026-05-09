@@ -25,6 +25,7 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "google-search-results-nodejs": "^2.1.0",
+    "mongoose": "^9.6.2",
     "openai": "^6.34.0",
     "zod": "^4.4.3"
   }
