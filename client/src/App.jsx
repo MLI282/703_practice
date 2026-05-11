@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   BrowserRouter,
   Link,
@@ -13,9 +13,42 @@ import './App.css'
 
 const API_BASE = 'http://localhost:3001'
 const AUTH_STORAGE_KEY = 'agent_search_auth'
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyDmJYMiPEdbrS6_Nfn_QwfSPYdlWjieh50'
 const DEFAULT_LOCATION = {
   lat: -36.8485,
   lng: 174.7633,
+}
+const PRODUCT_RESULT_LIMIT = 8
+
+let googleMapsLoader
+
+function loadGoogleMaps() {
+  if (window.google?.maps) {
+    return Promise.resolve(window.google.maps)
+  }
+
+  if (!googleMapsLoader) {
+    googleMapsLoader = new Promise((resolve, reject) => {
+      const existingScript = document.querySelector('script[data-agent-google-maps]')
+
+      if (existingScript) {
+        existingScript.addEventListener('load', () => resolve(window.google.maps), { once: true })
+        existingScript.addEventListener('error', reject, { once: true })
+        return
+      }
+
+      const script = document.createElement('script')
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}`
+      script.async = true
+      script.defer = true
+      script.dataset.agentGoogleMaps = 'true'
+      script.onload = () => resolve(window.google.maps)
+      script.onerror = reject
+      document.head.appendChild(script)
+    })
+  }
+
+  return googleMapsLoader
 }
 
 function readStoredAuth() {
@@ -71,12 +104,182 @@ function getTitle(item) {
   return item.name || item.product_title || item.nearby_store || item.title || 'Untitled result'
 }
 
+function isProductResult(item) {
+  return Boolean(item.product_title || item.type === 'product')
+}
+
+function limitProductResults(data) {
+  if (!Array.isArray(data)) {
+    return []
+  }
+
+  return data.some(isProductResult) ? data.slice(0, PRODUCT_RESULT_LIMIT) : data
+}
+
 function getDescription(item) {
+  const isProduct = isProductResult(item)
+
+  if (isProduct) {
+    return item.merchant?.name || item.nearby_store || item.address || ''
+  }
+
   return item.address || item.store_address || item.source || ''
 }
 
 function getRating(item) {
-  return item.rating ?? item.store_rating ?? null
+  return item.rating ?? item.store_rating ?? item.merchant?.rating ?? null
+}
+
+function getMerchant(item) {
+  const merchant = item.merchant || {}
+  const location = merchant.location || item.store_location || item.storeLocation || null
+
+  return {
+    name: merchant.name || item.nearby_store || item.address || '',
+    address: merchant.address || item.store_address || '',
+    rating: merchant.rating ?? item.store_rating ?? null,
+    photoUrl: merchant.photo_url || merchant.photoUrl || item.store_photo || item.storePhoto || '',
+    location,
+    distanceText: merchant.distance_text || merchant.distanceText || item.distance_text || item.distanceText || '',
+    durationText: merchant.duration_text || merchant.durationText || item.duration_text || item.durationText || '',
+  }
+}
+
+function getMerchantMapsUrl(merchant) {
+  const lat = merchant?.location?.lat
+  const lng = merchant?.location?.lng
+
+  if (lat && lng) {
+    return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`
+  }
+
+  const destination = merchant?.address || merchant?.name
+
+  if (!destination) {
+    return ''
+  }
+
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`
+}
+
+function getResultMapPoint(item, index) {
+  const isProduct = isProductResult(item)
+  const location = isProduct
+    ? item.merchant?.location || item.store_location || item.storeLocation
+    : item.location
+
+  if (!location?.lat || !location?.lng) {
+    return null
+  }
+
+  return {
+    position: {
+      lat: Number(location.lat),
+      lng: Number(location.lng),
+    },
+    label: String(index + 1),
+    title: isProduct
+      ? item.merchant?.name || item.nearby_store || getTitle(item)
+      : getTitle(item),
+    type: isProduct ? 'Seller' : 'Place',
+  }
+}
+
+function ResultsMiniMap({ results, userLocation }) {
+  const mapRef = useRef(null)
+  const mapInstanceRef = useRef(null)
+  const markersRef = useRef([])
+  const points = useMemo(() => {
+    return results
+      .map((item, index) => getResultMapPoint(item, index))
+      .filter(Boolean)
+  }, [results])
+
+  useEffect(() => {
+    if (!points.length || !mapRef.current) {
+      return
+    }
+
+    let cancelled = false
+
+    loadGoogleMaps()
+      .then((maps) => {
+        if (cancelled || !mapRef.current) {
+          return
+        }
+
+        if (!mapInstanceRef.current) {
+          mapInstanceRef.current = new maps.Map(mapRef.current, {
+            center: userLocation || points[0].position,
+            zoom: 13,
+            mapTypeControl: false,
+            streetViewControl: false,
+            fullscreenControl: false,
+          })
+        }
+
+        markersRef.current.forEach((marker) => marker.setMap(null))
+        markersRef.current = []
+
+        const bounds = new maps.LatLngBounds()
+
+        if (userLocation?.lat && userLocation?.lng) {
+          bounds.extend(userLocation)
+          markersRef.current.push(
+            new maps.Marker({
+              map: mapInstanceRef.current,
+              position: userLocation,
+              title: 'Your location',
+              icon: 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png',
+            }),
+          )
+        }
+
+        points.forEach((point) => {
+          bounds.extend(point.position)
+          markersRef.current.push(
+            new maps.Marker({
+              map: mapInstanceRef.current,
+              position: point.position,
+              label: point.label,
+              title: `${point.type}: ${point.title}`,
+            }),
+          )
+        })
+
+        if (points.length === 1 && !userLocation) {
+          mapInstanceRef.current.setCenter(points[0].position)
+          mapInstanceRef.current.setZoom(14)
+          return
+        }
+
+        mapInstanceRef.current.fitBounds(bounds, 42)
+      })
+      .catch((err) => {
+        console.error('Google Maps failed to load:', err)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [points, userLocation])
+
+  if (!points.length) {
+    return null
+  }
+
+  return (
+    <section className="mini-map-panel">
+      <div className="mini-map-header">
+        <div>
+          <p className="eyebrow">Map</p>
+          <h2>Result locations</h2>
+        </div>
+        <span>{points.length} shown</span>
+      </div>
+      <div className="mini-map-canvas" ref={mapRef} />
+    </section>
+  )
 }
 
 function ResultCard({ item }) {
@@ -84,13 +287,15 @@ function ResultCard({ item }) {
   const title = getTitle(item)
   const description = getDescription(item)
   const rating = getRating(item)
-  const isProduct = Boolean(item.product_title || item.type === 'product')
+  const isProduct = isProductResult(item)
   const rank = item.compare_rank ?? item.rank ?? '-'
   const bestFor = item.best_for || item.bestFor
   const reason = item.compare_reason || item.reason
   const price = item.product_price || item.price
   const distanceText = item.distance_text || item.distanceText
   const durationText = item.duration_text || item.durationText
+  const merchant = isProduct ? getMerchant(item) : null
+  const merchantMapsUrl = isProduct ? getMerchantMapsUrl(merchant) : ''
 
   return (
     <article className="result-card">
@@ -113,10 +318,53 @@ function ResultCard({ item }) {
           <div className="price">{price}</div>
         )}
 
+        {isProduct && merchant?.name && (
+          <aside className="merchant-panel">
+            <div className="merchant-heading">
+              <span>Seller</span>
+              <strong>{merchant.name}</strong>
+            </div>
+            <dl>
+              {merchant.address && (
+                <>
+                  <dt>Address</dt>
+                  <dd>{merchant.address}</dd>
+                </>
+              )}
+              {merchant.rating && (
+                <>
+                  <dt>Rating</dt>
+                  <dd>{merchant.rating}</dd>
+                </>
+              )}
+              {(merchant.distanceText || merchant.durationText) && (
+                <>
+                  <dt>Nearby</dt>
+                  <dd>
+                    {[merchant.distanceText, merchant.durationText]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </dd>
+                </>
+              )}
+            </dl>
+            {merchantMapsUrl && (
+              <a
+                className="merchant-map-link"
+                href={merchantMapsUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Open in Maps
+              </a>
+            )}
+          </aside>
+        )}
+
         <div className="facts">
-          {rating && <span>Rating {rating}</span>}
-          {distanceText && <span>{distanceText}</span>}
-          {durationText && <span>{durationText}</span>}
+          {!isProduct && rating && <span>Rating {rating}</span>}
+          {!isProduct && distanceText && <span>{distanceText}</span>}
+          {!isProduct && durationText && <span>{durationText}</span>}
           {bestFor && <span>{bestFor}</span>}
         </div>
 
@@ -324,7 +572,7 @@ function SearchPage({ auth, onLogout }) {
         auth,
       )
 
-      setResults(Array.isArray(data) ? data : [])
+      setResults(limitProductResults(data))
     } catch (err) {
       setResults([])
       setError(err.message || 'Agent search failed')
@@ -391,6 +639,10 @@ function SearchPage({ auth, onLogout }) {
           <p className="eyebrow">Workflow recommendation</p>
           <p>{recommendation}</p>
         </section>
+      )}
+
+      {!loading && results.length > 0 && (
+        <ResultsMiniMap results={results} userLocation={location} />
       )}
 
       <section className="results-grid" aria-live="polite">

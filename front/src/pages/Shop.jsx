@@ -3,6 +3,25 @@ import React, {
   useEffect,
 } from "react";
 
+const PRODUCT_RESULT_LIMIT = 8;
+
+function getMerchantMapsUrl(product) {
+  const merchant = product.merchant || {};
+  const location = merchant.location || product.store_location;
+
+  if (location?.lat && location?.lng) {
+    return `https://www.google.com/maps/dir/?api=1&destination=${location.lat},${location.lng}`;
+  }
+
+  const destination = merchant.address || product.store_address || product.nearby_store;
+
+  if (!destination) {
+    return "";
+  }
+
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`;
+}
+
 function Shop() {
 
   // 🔍 搜索词
@@ -72,7 +91,7 @@ function Shop() {
 
           // ⭐ 只保留前10个
           setResults(
-            data.slice(0, 10)
+            data.slice(0, PRODUCT_RESULT_LIMIT)
           );
 
         } else {
@@ -433,6 +452,50 @@ function Shop() {
                     </div>
 
                     {/* 🔗 商品链接 */}
+                    {getMerchantMapsUrl(product) && (
+                      <a
+                        href={getMerchantMapsUrl(product)}
+
+                        target="_blank"
+
+                        rel="noreferrer"
+
+                        style={{
+                          display:
+                            "inline-block",
+
+                          width: "100%",
+
+                          textAlign:
+                            "center",
+
+                          padding:
+                            "10px 0",
+
+                          marginBottom: 10,
+
+                          background:
+                            "white",
+
+                          color:
+                            "#1a73e8",
+
+                          border:
+                            "1px solid #d7dbe5",
+
+                          borderRadius: 10,
+
+                          textDecoration:
+                            "none",
+
+                          fontWeight:
+                            "bold",
+                        }}
+                      >
+                        Open in Google Maps
+                      </a>
+                    )}
+
                     <a
                       href={
                         product.product_link

@@ -2,6 +2,11 @@ const deepseek = require("../../config/deepseekClient");
 const placesService = require("../../services/placesService");
 const shoppingService = require("../../services/shoppingService");
 
+const PLACE_RESULT_LIMIT = 6;
+const PRODUCT_RESULT_LIMIT = 8;
+const DEFAULT_COMPARE_REASON = "Matched from live search results.";
+const DEFAULT_BEST_FOR = "overall match";
+
 function cleanJsonText(text) {
   return text.replace(/```json/g, "").replace(/```/g, "").trim();
 }
@@ -45,17 +50,29 @@ async function invokeDeepSeekJson(prompt, fallback) {
 }
 
 async function analyzeInputNode(state) {
+  const fallbackPlaceIntent = {
+    place_type: "local place",
+    keywords: state.userInput,
+    features: [],
+    food_cuisine: null,
+    price: null,
+    max_distance_km: null,
+    open_now: null,
+    use_case: state.userInput,
+  };
+
   const fallback = {
     category: guessCategory(state.userInput),
     budget_nzd: null,
     preferred_features: [],
     ranking_focus: ["distance", "rating", "match"],
     use_case: state.userInput,
+    place_intent: guessCategory(state.userInput) === "place" ? fallbackPlaceIntent : null,
   };
 
   const parsed = await invokeDeepSeekJson(
     `
-You are an assistant that classifies a user's local search or shopping request.
+You are an assistant that classifies a user's local search or shopping request and extracts any place-search intent in one pass.
 
 User request:
 ${state.userInput}
@@ -66,20 +83,51 @@ Return ONLY valid JSON:
   "budget_nzd": number or null,
   "preferred_features": [string],
   "ranking_focus": [string],
-  "use_case": string
+  "use_case": string,
+  "place_intent": {
+    "place_type": "library | museum | park | gym | pharmacy | supermarket | restaurant | cafe | attraction | hotel | school | hospital | parking | local place | etc",
+    "keywords": "short search phrase or null",
+    "features": ["quiet", "open now", "kid friendly", "near campus", "good for walking"],
+    "food_cuisine": "italian | chinese | japanese | korean | indian | thai | null",
+    "price": "cheap | medium | expensive | null",
+    "max_distance_km": number or null,
+    "open_now": true or false or null,
+    "use_case": "short description of why the user wants this place"
+  } or null
 }
 
 Rules:
 - Use "place" for restaurants, cafes, supermarkets, attractions, routes, or local places.
 - Use "product" for buying products such as laptops, phones, clothes, shoes, books, furniture, food items, etc.
+- For product requests, place_intent must be null.
+- For place requests, fill place_intent.
+- Focus on the place category first, not food.
+- Only set food_cuisine when the user clearly asks for food, restaurants, cafes, meals, cuisine, drinks, or dining.
+- For non-food places, food_cuisine must be null.
+- Do not force restaurant or cafe when the user asks for libraries, parks, museums, gyms, pharmacies, attractions, shops, or services.
 - Do not explain.
 `,
     fallback
   );
 
+  const category = parsed.category === "product" ? "product" : "place";
+  const placeIntent =
+    category === "place"
+      ? {
+          ...fallbackPlaceIntent,
+          ...(parsed.place_intent || {}),
+          food_cuisine: parsed.place_intent?.food_cuisine || null,
+        }
+      : null;
+
   return {
-    category: parsed.category === "product" ? "product" : "place",
-    parsedPreferences: parsed,
+    category,
+    placeIntent,
+    parsedPreferences: {
+      ...parsed,
+      category,
+      place_intent: placeIntent,
+    },
   };
 }
 
@@ -87,6 +135,12 @@ async function analyzePlaceIntentNode(state) {
   if (state.category !== "place") {
     return {
       placeIntent: null,
+    };
+  }
+
+  if (state.placeIntent) {
+    return {
+      placeIntent: state.placeIntent,
     };
   }
 
@@ -206,9 +260,48 @@ function fallbackComparisons(candidates) {
   return candidates.map((candidate, index) => ({
     index: candidate.index ?? index,
     compare_rank: index + 1,
-    compare_reason: "Ranked by the current service result order.",
-    best_for: "overall match",
+    compare_reason: DEFAULT_COMPARE_REASON,
+    best_for: DEFAULT_BEST_FOR,
   }));
+}
+
+function normalizeComparisons(comparisons, candidates) {
+  if (!Array.isArray(comparisons)) {
+    return fallbackComparisons(candidates);
+  }
+
+  const candidateIndexes = new Set(candidates.map((candidate) => candidate.index));
+  const byIndex = new Map();
+
+  comparisons.forEach((comparison) => {
+    const index = Number(comparison?.index);
+
+    if (!candidateIndexes.has(index) || byIndex.has(index)) {
+      return;
+    }
+
+    const rank = Number(comparison.compare_rank);
+
+    byIndex.set(index, {
+      index,
+      compare_rank: Number.isFinite(rank) && rank > 0 ? rank : index + 1,
+      compare_reason: comparison.compare_reason || DEFAULT_COMPARE_REASON,
+      best_for: comparison.best_for || DEFAULT_BEST_FOR,
+    });
+  });
+
+  candidates.forEach((candidate) => {
+    if (!byIndex.has(candidate.index)) {
+      byIndex.set(candidate.index, {
+        index: candidate.index,
+        compare_rank: candidate.index + 1,
+        compare_reason: DEFAULT_COMPARE_REASON,
+        best_for: DEFAULT_BEST_FOR,
+      });
+    }
+  });
+
+  return Array.from(byIndex.values());
 }
 
 async function compareCandidatesNode(state) {
@@ -259,9 +352,10 @@ Rules:
   );
 
   return {
-    comparisons: Array.isArray(parsed.comparisons)
-      ? parsed.comparisons
-      : fallback.comparisons,
+    comparisons: normalizeComparisons(
+      parsed.comparisons,
+      state.normalizedCandidates
+    ),
     recommendation: parsed.recommendation || fallback.recommendation,
   };
 }
@@ -276,19 +370,32 @@ function formatResponseNode(state) {
 
     return {
       ...item,
+      __original_index: index,
       compare_rank: comparison?.compare_rank ?? index + 1,
       compare_reason:
-        comparison?.compare_reason || "Ranked by the current service result order.",
-      best_for: comparison?.best_for || "overall match",
+        comparison?.compare_reason || DEFAULT_COMPARE_REASON,
+      best_for: comparison?.best_for || DEFAULT_BEST_FOR,
       agent_recommendation: state.recommendation,
     };
   });
 
   enriched.sort((a, b) => {
-    return (a.compare_rank ?? 999999) - (b.compare_rank ?? 999999);
+    return (
+      (a.compare_rank ?? 999999) - (b.compare_rank ?? 999999) ||
+      a.__original_index - b.__original_index
+    );
   });
 
-  const results = state.category === "place" ? enriched.slice(0, 6) : enriched;
+  enriched.forEach((item, index) => {
+    item.compare_rank = index + 1;
+  });
+
+  const resultLimit =
+    state.category === "place" ? PLACE_RESULT_LIMIT : PRODUCT_RESULT_LIMIT;
+  const results = enriched.slice(0, resultLimit).map((item) => {
+    const { __original_index, ...result } = item;
+    return result;
+  });
 
   return {
     results,

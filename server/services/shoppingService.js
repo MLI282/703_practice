@@ -3,6 +3,8 @@ const deepseek = require("../config/deepseekClient");
 const serpSearch = require("../config/serpClient");
 const { GOOGLE_API_KEY } = require("../config/apiKeys");
 
+const PRODUCT_RESULT_LIMIT = 8;
+
 function serviceError(code) {
   const err = new Error(code);
   err.code = code;
@@ -18,13 +20,13 @@ async function searchGoogleShopping(query) {
         google_domain: "google.com",
         gl: "nz",
         hl: "en",
-        num: 8,
+        num: PRODUCT_RESULT_LIMIT,
       },
       (data) => {
         if (data.error) {
           reject(data.error);
         }
-        resolve(data.shopping_results || []);
+        resolve((data.shopping_results || []).slice(0, PRODUCT_RESULT_LIMIT));
       }
     );
   });
@@ -153,12 +155,21 @@ Clothes -> clothing store
 
   const matrix = await computeDistances(lat, lng, stores);
 
-  const products = await searchGoogleShopping(parsed.shopping_query);
+  const products = (await searchGoogleShopping(parsed.shopping_query)).slice(
+    0,
+    PRODUCT_RESULT_LIMIT
+  );
   console.log("🛒 Products:", products.length);
 
   const finalResults = products.map((product, index) => {
     const store = stores[index % stores.length];
     const d = matrix[index % matrix.length];
+    const distanceText = d?.distanceMeters
+      ? `${(d.distanceMeters / 1000).toFixed(1)} km`
+      : null;
+    const durationText = d?.duration
+      ? `${Math.round(parseInt(d.duration.replace("s", "")) / 60)} mins`
+      : null;
 
     return {
       product_title: product.title,
@@ -170,12 +181,18 @@ Clothes -> clothing store
       store_address: store?.address,
       store_rating: store?.rating,
       store_photo: store?.photo_url,
-      distance_text: d?.distanceMeters
-        ? `${(d.distanceMeters / 1000).toFixed(1)} km`
-        : null,
-      duration_text: d?.duration
-        ? `${Math.round(parseInt(d.duration.replace("s", "")) / 60)} mins`
-        : null,
+      store_location: store?.location || null,
+      merchant: {
+        name: store?.name || null,
+        address: store?.address || null,
+        rating: store?.rating ?? null,
+        photo_url: store?.photo_url || null,
+        location: store?.location || null,
+        distance_text: distanceText,
+        duration_text: durationText,
+      },
+      distance_text: distanceText,
+      duration_text: durationText,
       agent_reasoning: parsed.reasoning,
     };
   });

@@ -1,5 +1,19 @@
 import React, { useState } from "react";
 
+const PRODUCT_RESULT_LIMIT = 8;
+
+function isProductResult(item) {
+  return Boolean(item.product_title || item.type === "product");
+}
+
+function limitProductResults(data) {
+  if (!Array.isArray(data)) {
+    return [];
+  }
+
+  return data.some(isProductResult) ? data.slice(0, PRODUCT_RESULT_LIMIT) : data;
+}
+
 function getImageUrl(item) {
   return item.photo_url || item.product_image || item.store_photo || "";
 }
@@ -9,6 +23,10 @@ function getTitle(item) {
 }
 
 function getSubtitle(item) {
+  if (item.product_title) {
+    return item.merchant?.name || item.nearby_store || "";
+  }
+
   return item.address || item.store_address || item.source || "";
 }
 
@@ -17,6 +35,20 @@ function AgentResultCard({ item }) {
   const title = getTitle(item);
   const subtitle = getSubtitle(item);
   const isProduct = Boolean(item.product_title);
+  const merchant = item.merchant || {};
+  const merchantName = merchant.name || item.nearby_store;
+  const merchantAddress = merchant.address || item.store_address;
+  const merchantRating = merchant.rating ?? item.store_rating;
+  const merchantDistance = merchant.distance_text || item.distance_text;
+  const merchantDuration = merchant.duration_text || item.duration_text;
+  const merchantLocation = merchant.location || item.store_location;
+  const merchantMapsUrl = merchantLocation?.lat && merchantLocation?.lng
+    ? `https://www.google.com/maps/dir/?api=1&destination=${merchantLocation.lat},${merchantLocation.lng}`
+    : merchantAddress || merchantName
+      ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
+          merchantAddress || merchantName
+        )}`
+      : "";
 
   return (
     <li
@@ -99,6 +131,63 @@ function AgentResultCard({ item }) {
           </div>
         )}
 
+        {isProduct && merchantName && (
+          <div
+            style={{
+              display: "grid",
+              gap: 8,
+              padding: 12,
+              borderRadius: 8,
+              background: "#f8fafd",
+              border: "1px solid #e6e8ef",
+              marginBottom: 12,
+              fontSize: 13,
+              lineHeight: 1.4,
+            }}
+          >
+            <div>
+              <div
+                style={{
+                  color: "#5f6368",
+                  fontSize: 11,
+                  fontWeight: "bold",
+                  textTransform: "uppercase",
+                  marginBottom: 3,
+                }}
+              >
+                Seller
+              </div>
+              <strong>{merchantName}</strong>
+            </div>
+            {merchantAddress && <div>Address: {merchantAddress}</div>}
+            {merchantRating && <div>Rating: {merchantRating}</div>}
+            {(merchantDistance || merchantDuration) && (
+              <div>
+                Nearby: {[merchantDistance, merchantDuration].filter(Boolean).join(" · ")}
+              </div>
+            )}
+            {merchantMapsUrl && (
+              <a
+                href={merchantMapsUrl}
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  justifySelf: "start",
+                  padding: "7px 10px",
+                  borderRadius: 8,
+                  border: "1px solid #d7dbe5",
+                  background: "white",
+                  color: "#3c4043",
+                  textDecoration: "none",
+                  fontWeight: "bold",
+                }}
+              >
+                Open in Google Maps
+              </a>
+            )}
+          </div>
+        )}
+
         <div
           style={{
             display: "grid",
@@ -108,19 +197,19 @@ function AgentResultCard({ item }) {
             marginBottom: 12,
           }}
         >
-          {(item.rating || item.store_rating) && (
+          {!isProduct && (item.rating || item.store_rating) && (
             <div style={{ color: "#f5a623" }}>
               Rating: {item.rating ?? item.store_rating}
             </div>
           )}
 
-          {item.distance_text && (
+          {!isProduct && item.distance_text && (
             <div style={{ color: "#3c4043" }}>
               Distance: {item.distance_text}
             </div>
           )}
 
-          {item.duration_text && (
+          {!isProduct && item.duration_text && (
             <div style={{ color: "#3c4043" }}>
               Time: {item.duration_text}
             </div>
@@ -219,7 +308,7 @@ function AgentSearchPanel({ center }) {
         throw new Error(data.error || "Agent search failed");
       }
 
-      setResults(Array.isArray(data) ? data : []);
+      setResults(limitProductResults(data));
     } catch (err) {
       console.error("Agent search failed:", err);
       setResults([]);

@@ -42,7 +42,20 @@ function createHistoryResults(results) {
     bestFor: item.best_for,
     rating: item.rating ?? item.store_rating ?? null,
     price: item.product_price || null,
-    address: item.address || item.store_address || null,
+    address: item.product_title
+      ? item.nearby_store || item.merchant?.name || null
+      : item.address || item.store_address || null,
+    merchant: item.product_title
+      ? {
+          name: item.nearby_store || item.merchant?.name || null,
+          address: item.store_address || item.merchant?.address || null,
+          rating: item.store_rating ?? item.merchant?.rating ?? null,
+          photoUrl: item.store_photo || item.merchant?.photo_url || null,
+          location: item.store_location || item.merchant?.location || null,
+          distanceText: item.distance_text || item.merchant?.distance_text || null,
+          durationText: item.duration_text || item.merchant?.duration_text || null,
+        }
+      : null,
     source: item.source || null,
     distanceText: item.distance_text || null,
     durationText: item.duration_text || null,
@@ -89,9 +102,9 @@ async function search(req, res) {
       lng,
     });
 
-    await saveSearchHistory(req, result);
-
     res.json(result.results);
+
+    saveSearchHistory(req, result);
   } catch (err) {
     if (err.code === "AI_PARSE_FAILED") {
       return res.status(400).json({ error: "AI解析失败" });

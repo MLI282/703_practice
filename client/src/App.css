@@ -284,6 +284,50 @@ h1 {
   line-height: 1.55;
 }
 
+.mini-map-panel {
+  margin-top: 20px;
+  overflow: hidden;
+  border: 1px solid rgba(96, 48, 0, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 12px 32px rgba(145, 76, 0, 0.12);
+}
+
+.mini-map-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+}
+
+.mini-map-header h2 {
+  margin: 0;
+  color: #2c1800;
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.mini-map-header .eyebrow {
+  margin-bottom: 5px;
+}
+
+.mini-map-header span {
+  flex: 0 0 auto;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: #fff1ce;
+  color: #5b3200;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.mini-map-canvas {
+  width: 100%;
+  height: 280px;
+  background: #ffe5aa;
+}
+
 .results-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -367,6 +411,78 @@ h1 {
   color: #bd5e00;
   font-size: 24px;
   font-weight: 900;
+}
+
+.merchant-panel {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid rgba(96, 48, 0, 0.1);
+  border-radius: 8px;
+  background: #fffaf0;
+}
+
+.merchant-heading {
+  display: grid;
+  gap: 3px;
+}
+
+.merchant-heading span {
+  color: #a45700;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.merchant-heading strong {
+  color: #2c1800;
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.merchant-panel dl {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 7px 10px;
+  margin: 0;
+}
+
+.merchant-panel dt,
+.merchant-panel dd {
+  min-width: 0;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.merchant-panel dt {
+  color: #8a4300;
+  font-weight: 800;
+}
+
+.merchant-panel dd {
+  color: #5b3200;
+}
+
+.merchant-map-link {
+  display: inline-grid;
+  justify-self: start;
+  min-height: 34px;
+  align-items: center;
+  padding: 0 11px;
+  border: 1px solid rgba(96, 48, 0, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.64);
+  color: #5b3200;
+  font-size: 13px;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.merchant-map-link:hover {
+  border-color: rgba(96, 48, 0, 0.32);
+  background: #fff;
 }
 
 .facts {
