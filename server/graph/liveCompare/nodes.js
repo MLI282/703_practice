@@ -13,6 +13,7 @@ function cleanJsonText(text) {
 
 function guessCategory(userInput) {
   const text = String(userInput || "").toLowerCase();
+
   const shoppingWords = [
     "buy",
     "purchase",
@@ -27,7 +28,9 @@ function guessCategory(userInput) {
     "books",
   ];
 
-  return shoppingWords.some((word) => text.includes(word)) ? "product" : "place";
+  return shoppingWords.some((word) => text.includes(word))
+    ? "product"
+    : "place";
 }
 
 async function invokeDeepSeekJson(prompt, fallback) {
@@ -50,6 +53,8 @@ async function invokeDeepSeekJson(prompt, fallback) {
 }
 
 async function analyzeInputNode(state) {
+  console.time("analyzeInputNode_total");
+
   const fallbackPlaceIntent = {
     place_type: "local place",
     keywords: state.userInput,
@@ -67,8 +72,13 @@ async function analyzeInputNode(state) {
     preferred_features: [],
     ranking_focus: ["distance", "rating", "match"],
     use_case: state.userInput,
-    place_intent: guessCategory(state.userInput) === "place" ? fallbackPlaceIntent : null,
+    place_intent:
+      guessCategory(state.userInput) === "place"
+        ? fallbackPlaceIntent
+        : null,
   };
+
+  console.time("deepseek_intent_classification");
 
   const parsed = await invokeDeepSeekJson(
     `
@@ -110,7 +120,15 @@ Rules:
     fallback
   );
 
-  const category = parsed.category === "product" ? "product" : "place";
+  console.timeEnd("deepseek_intent_classification");
+
+  const category =
+    parsed.category === "product"
+      ? "product"
+      : "place";
+
+  console.time("intent_post_processing");
+
   const placeIntent =
     category === "place"
       ? {
@@ -119,6 +137,9 @@ Rules:
           food_cuisine: parsed.place_intent?.food_cuisine || null,
         }
       : null;
+
+  console.timeEnd("intent_post_processing");
+  console.timeEnd("analyzeInputNode_total");
 
   return {
     category,
@@ -132,13 +153,19 @@ Rules:
 }
 
 async function analyzePlaceIntentNode(state) {
+  console.time("analyzePlaceIntentNode");
+
   if (state.category !== "place") {
+    console.timeEnd("analyzePlaceIntentNode");
+
     return {
       placeIntent: null,
     };
   }
 
   if (state.placeIntent) {
+    console.timeEnd("analyzePlaceIntentNode");
+
     return {
       placeIntent: state.placeIntent,
     };
@@ -154,6 +181,8 @@ async function analyzePlaceIntentNode(state) {
     open_now: null,
     use_case: state.userInput,
   };
+
+  console.time("deepseek_place_analysis");
 
   const parsed = await invokeDeepSeekJson(
     `
@@ -173,22 +202,19 @@ Return ONLY valid JSON:
   "open_now": true or false or null,
   "use_case": "short description of why the user wants this place"
 }
-
-Rules:
-- Focus on the place category first, not food.
-- Only set food_cuisine when the user clearly asks for food, restaurants, cafes, meals, cuisine, drinks, or dining.
-- For non-food places, food_cuisine must be null.
-- Do not force restaurant or cafe when the user asks for libraries, parks, museums, gyms, pharmacies, attractions, shops, or services.
-- Do not explain.
 `,
     fallback
   );
+
+  console.timeEnd("deepseek_place_analysis");
 
   const placeIntent = {
     ...fallback,
     ...parsed,
     food_cuisine: parsed.food_cuisine || null,
   };
+
+  console.timeEnd("analyzePlaceIntentNode");
 
   return {
     placeIntent,
@@ -200,17 +226,26 @@ Rules:
 }
 
 async function fetchCandidatesNode(state) {
+  console.time("fetchCandidatesNode_total");
+
   if (state.category === "product") {
+    console.time("shopping_api");
+
     const results = await shoppingService.searchShopping({
       userInput: state.userInput,
       lat: state.lat,
       lng: state.lng,
     });
 
+    console.timeEnd("shopping_api");
+    console.timeEnd("fetchCandidatesNode_total");
+
     return {
       candidates: results,
     };
   }
+
+  console.time("places_api");
 
   const results = await placesService.searchPlaces({
     lat: state.lat,
@@ -219,12 +254,17 @@ async function fetchCandidatesNode(state) {
     placeIntent: state.placeIntent,
   });
 
+  console.timeEnd("places_api");
+  console.timeEnd("fetchCandidatesNode_total");
+
   return {
     candidates: results,
   };
 }
 
 function normalizeCandidatesNode(state) {
+  console.time("normalizeCandidatesNode");
+
   const normalizedCandidates = state.candidates.map((item, index) => {
     if (state.category === "product") {
       return {
@@ -251,6 +291,8 @@ function normalizeCandidatesNode(state) {
     };
   });
 
+  console.timeEnd("normalizeCandidatesNode");
+
   return {
     normalizedCandidates,
   };
@@ -270,7 +312,10 @@ function normalizeComparisons(comparisons, candidates) {
     return fallbackComparisons(candidates);
   }
 
-  const candidateIndexes = new Set(candidates.map((candidate) => candidate.index));
+  const candidateIndexes = new Set(
+    candidates.map((candidate) => candidate.index)
+  );
+
   const byIndex = new Map();
 
   comparisons.forEach((comparison) => {
@@ -284,9 +329,14 @@ function normalizeComparisons(comparisons, candidates) {
 
     byIndex.set(index, {
       index,
-      compare_rank: Number.isFinite(rank) && rank > 0 ? rank : index + 1,
-      compare_reason: comparison.compare_reason || DEFAULT_COMPARE_REASON,
-      best_for: comparison.best_for || DEFAULT_BEST_FOR,
+      compare_rank:
+        Number.isFinite(rank) && rank > 0
+          ? rank
+          : index + 1,
+      compare_reason:
+        comparison.compare_reason || DEFAULT_COMPARE_REASON,
+      best_for:
+        comparison.best_for || DEFAULT_BEST_FOR,
     });
   });
 
@@ -305,64 +355,112 @@ function normalizeComparisons(comparisons, candidates) {
 }
 
 async function compareCandidatesNode(state) {
+  console.time("compareCandidatesNode");
+
   if (!state.normalizedCandidates.length) {
+    console.timeEnd("compareCandidatesNode");
+
     return {
       comparisons: [],
       recommendation: "",
     };
   }
 
-  const fallback = {
-    recommendation: "Compared using the existing service result order.",
-    comparisons: fallbackComparisons(state.normalizedCandidates),
-  };
+  // 本地公式排序
+  const scored = state.normalizedCandidates.map((item) => {
+    const rating =
+      Number(item.rating || item.store_rating || 0);
 
-  const parsed = await invokeDeepSeekJson(
-    `
-You compare candidates returned by live Google Maps or shopping APIs.
+    const distanceText =
+      item.distance_text || "";
+
+    const distanceMatch =
+      distanceText.match(/[\d.]+/);
+
+    const distance =
+      distanceMatch
+        ? Number(distanceMatch[0])
+        : 10;
+
+    const score =
+      rating * 0.7 - distance * 0.3;
+
+    return {
+      ...item,
+      score,
+    };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+
+  // 只对前3个生成 AI explanation
+  const topCandidates = scored.slice(0, 3);
+
+  console.time("deepseek_explanations");
+
+  const comparisons = await Promise.all(
+    topCandidates.map(async (item, index) => {
+      let reason =
+        `Highly rated (${item.rating || item.store_rating || "N/A"}) and nearby.`;
+
+      try {
+        const aiResponse =
+          await deepseek.chat.completions.create({
+            model: "deepseek-chat",
+            temperature: 0.7,
+            messages: [
+              {
+                role: "system",
+                content:
+                  "Write one short natural recommendation sentence for a local place.",
+              },
+              {
+                role: "user",
+                content: `
+Place: ${item.title}
+Rating: ${item.rating || item.store_rating}
+Distance: ${item.distance_text}
 
 User request:
 ${state.userInput}
-
-Parsed preferences:
-${JSON.stringify(state.parsedPreferences, null, 2)}
-
-Candidates:
-${JSON.stringify(state.normalizedCandidates, null, 2)}
-
-Return ONLY valid JSON:
-{
-  "recommendation": "one concise overall recommendation",
-  "comparisons": [
-    {
-      "index": number,
-      "compare_rank": number,
-      "compare_reason": "short reason",
-      "best_for": "short label"
-    }
-  ]
-}
-
-Rules:
-- Use only candidate indexes that exist.
-- Keep original candidate information unchanged.
-- Rank the candidates by user fit, not by explanation length.
 `,
-    fallback
+              },
+            ],
+          });
+
+        reason =
+          aiResponse.choices[0].message.content.trim();
+      } catch (err) {
+        console.log("AI explanation failed");
+      }
+
+      return {
+        index: item.index,
+        compare_rank: index + 1,
+        compare_reason: reason,
+        best_for: "overall match",
+      };
+    })
   );
 
+  console.timeEnd("deepseek_explanations");
+  console.timeEnd("compareCandidatesNode");
+
   return {
-    comparisons: normalizeComparisons(
-      parsed.comparisons,
-      state.normalizedCandidates
-    ),
-    recommendation: parsed.recommendation || fallback.recommendation,
+    comparisons,
+    recommendation:
+      "Ranked using local scoring and AI explanations.",
   };
 }
 
 function formatResponseNode(state) {
+  console.time("formatResponseNode");
+
   const comparisonByIndex = new Map(
-    state.comparisons.map((item) => [Number(item.index), item])
+    state.comparisons.map((item) => [
+      Number(item.index),
+      item,
+    ])
   );
 
   const enriched = state.candidates.map((item, index) => {
@@ -371,17 +469,23 @@ function formatResponseNode(state) {
     return {
       ...item,
       __original_index: index,
-      compare_rank: comparison?.compare_rank ?? index + 1,
+      compare_rank:
+        comparison?.compare_rank ?? index + 1,
       compare_reason:
-        comparison?.compare_reason || DEFAULT_COMPARE_REASON,
-      best_for: comparison?.best_for || DEFAULT_BEST_FOR,
-      agent_recommendation: state.recommendation,
+        comparison?.compare_reason ||
+        DEFAULT_COMPARE_REASON,
+      best_for:
+        comparison?.best_for ||
+        DEFAULT_BEST_FOR,
+      agent_recommendation:
+        state.recommendation,
     };
   });
 
   enriched.sort((a, b) => {
     return (
-      (a.compare_rank ?? 999999) - (b.compare_rank ?? 999999) ||
+      (a.compare_rank ?? 999999) -
+        (b.compare_rank ?? 999999) ||
       a.__original_index - b.__original_index
     );
   });
@@ -391,11 +495,18 @@ function formatResponseNode(state) {
   });
 
   const resultLimit =
-    state.category === "place" ? PLACE_RESULT_LIMIT : PRODUCT_RESULT_LIMIT;
-  const results = enriched.slice(0, resultLimit).map((item) => {
-    const { __original_index, ...result } = item;
-    return result;
-  });
+    state.category === "place"
+      ? PLACE_RESULT_LIMIT
+      : PRODUCT_RESULT_LIMIT;
+
+  const results = enriched
+    .slice(0, resultLimit)
+    .map((item) => {
+      const { __original_index, ...result } = item;
+      return result;
+    });
+
+  console.timeEnd("formatResponseNode");
 
   return {
     results,
