@@ -10,6 +10,8 @@ const INTENT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const PRODUCT_CACHE_TTL_MS = 30 * 60 * 1000;
 const STORE_CACHE_TTL_MS = 60 * 60 * 1000;
 const DISTANCE_FALLBACK_KM = 20;
+const DEFAULT_STORE_RADIUS_METERS = 5000;
+const RELAXED_STORE_RADIUS_METERS = 20000;
 const PRODUCT_STOPWORDS = new Set([
   "buy",
   "find",
@@ -121,6 +123,18 @@ function makeCacheKey(kind, parts) {
 function roundCoordinate(value) {
   const numberValue = Number(value);
   return Number.isFinite(numberValue) ? numberValue.toFixed(2) : "";
+}
+
+function shouldRelaxDistanceLimit(userInput) {
+  const text = normalizeText(userInput);
+
+  return /no matter (the )?distance|distance (does not|doesn't) matter|any distance|no distance limit|far (away )?(is )?(ok|okay|fine)|don't care about distance|do not care about distance/.test(text);
+}
+
+function getStoreSearchRadius(userInput) {
+  return shouldRelaxDistanceLimit(userInput)
+    ? RELAXED_STORE_RADIUS_METERS
+    : DEFAULT_STORE_RADIUS_METERS;
 }
 
 async function readCache(cacheKey) {
@@ -361,7 +375,7 @@ async function searchGoogleShopping(query) {
   return products;
 }
 
-async function searchNearbyStoresLive(lat, lng, storeType) {
+async function searchNearbyStoresLive(lat, lng, storeType, radiusMeters) {
   const response = await axios.get(
     "https://maps.googleapis.com/maps/api/place/textsearch/json",
     {
@@ -369,7 +383,7 @@ async function searchNearbyStoresLive(lat, lng, storeType) {
         query: storeType,
         key: GOOGLE_API_KEY,
         location: `${lat},${lng}`,
-        radius: 10000,
+        radius: radiusMeters,
       },
     }
   );
@@ -385,11 +399,12 @@ async function searchNearbyStoresLive(lat, lng, storeType) {
   }));
 }
 
-async function searchNearbyStores(lat, lng, storeType) {
+async function searchNearbyStores(lat, lng, storeType, radiusMeters = DEFAULT_STORE_RADIUS_METERS) {
   const cacheKey = makeCacheKey("stores", [
     storeType,
     roundCoordinate(lat),
     roundCoordinate(lng),
+    radiusMeters,
   ]);
   const cachedStores = await readCache(cacheKey);
 
@@ -397,7 +412,7 @@ async function searchNearbyStores(lat, lng, storeType) {
     return cachedStores;
   }
 
-  const stores = await searchNearbyStoresLive(lat, lng, storeType);
+  const stores = await searchNearbyStoresLive(lat, lng, storeType, radiusMeters);
   await writeCache(cacheKey, "stores", stores, STORE_CACHE_TTL_MS);
 
   return stores;
@@ -631,12 +646,13 @@ async function searchShopping({ userInput, lat, lng }) {
   console.log("Shopping intent:", parsed);
 
   console.time("parallel_search_apis");
+  const storeSearchRadius = getStoreSearchRadius(userInput);
 
   const [stores, products] = await Promise.all([
     (async () => {
       console.time("nearby_stores");
 
-      const result = await searchNearbyStores(lat, lng, parsed.store_type);
+      const result = await searchNearbyStores(lat, lng, parsed.store_type, storeSearchRadius);
 
       console.timeEnd("nearby_stores");
 
@@ -695,6 +711,7 @@ async function searchShopping({ userInput, lat, lng }) {
         budget_nzd: parsed.budget_nzd,
         confidence: parsed.confidence,
         source: parsed.source,
+        store_search_radius_meters: storeSearchRadius,
       },
     };
   });
@@ -714,4 +731,5 @@ module.exports = {
   computeDistances,
   parseShoppingIntent,
   rankShoppingResults,
+  getStoreSearchRadius,
 };
