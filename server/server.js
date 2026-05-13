@@ -29,7 +29,7 @@ app.get("/", homeController.index);
 app.get("/search", placesController.search);
 app.get("/reverse-geocode", placesController.reverseGeocode);
 app.get("/route", routeController.getRoute);
-app.get("/shop-search", shoppingController.search);
+app.get("/shop-search", optionalAuth, shoppingController.search);
 app.get("/agent-search", optionalAuth, agentCompareController.search);
 app.post("/auth/register", authController.register);
 app.post("/auth/login", authController.login);

@@ -6,6 +6,7 @@ const PLACE_RESULT_LIMIT = 6;
 const PRODUCT_RESULT_LIMIT = 8;
 const DEFAULT_COMPARE_REASON = "Matched from live search results.";
 const DEFAULT_BEST_FOR = "overall match";
+const DEFAULT_DISTANCE_KM = 20;
 
 function cleanJsonText(text) {
   return text.replace(/```json/g, "").replace(/```/g, "").trim();
@@ -251,7 +252,10 @@ async function fetchCandidatesNode(state) {
     lat: state.lat,
     lng: state.lng,
     userInput: state.userInput,
-    placeIntent: state.placeIntent,
+    placeIntent: {
+      ...(state.placeIntent || {}),
+      ranking_focus: state.parsedPreferences?.ranking_focus || [],
+    },
   });
 
   console.timeEnd("places_api");
@@ -276,6 +280,10 @@ function normalizeCandidatesNode(state) {
         store_rating: item.store_rating,
         distance_text: item.distance_text,
         duration_text: item.duration_text,
+        match_score: item.match_score,
+        product_match: item.product_match,
+        compare_reason: item.compare_reason,
+        best_for: item.best_for,
         summary: item.agent_reasoning,
       };
     }
@@ -284,10 +292,16 @@ function normalizeCandidatesNode(state) {
       index,
       title: item.name,
       rating: item.rating,
+      user_ratings_total: item.user_ratings_total,
       address: item.address,
       price_level: item.price_level,
+      open_now: item.open_now,
+      distance_value: item.distance_value,
       distance_text: item.distance_text,
       duration_text: item.duration_text,
+      place_match_score: item.place_match_score,
+      compare_reason: item.compare_reason,
+      best_for: item.best_for,
     };
   });
 
@@ -354,6 +368,181 @@ function normalizeComparisons(comparisons, candidates) {
   return Array.from(byIndex.values());
 }
 
+function normalizeText(value) {
+  return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function getDistanceKm(item) {
+  if (Number.isFinite(Number(item.distance_value))) {
+    return Number(item.distance_value) / 1000;
+  }
+
+  const match = String(item.distance_text || "").match(/[\d.]+/);
+  if (!match) {
+    return DEFAULT_DISTANCE_KM;
+  }
+
+  const distanceText = normalizeText(item.distance_text);
+  return distanceText.includes(" m") ? Number(match[0]) / 1000 : Number(match[0]);
+}
+
+function getPlaceIntentTerms(state) {
+  const intent = state.placeIntent || state.parsedPreferences?.place_intent || {};
+  const features = Array.isArray(intent.features) ? intent.features : [];
+
+  return [
+    intent.place_type,
+    intent.keywords,
+    intent.food_cuisine,
+    intent.use_case,
+    ...features,
+  ]
+    .filter(Boolean)
+    .flatMap((value) => normalizeText(value).split(" "))
+    .filter((term) => term.length > 2);
+}
+
+function scorePlaceCandidate(item, state) {
+  if (Number.isFinite(Number(item.place_match_score))) {
+    return Number(item.place_match_score);
+  }
+
+  const intent = state.placeIntent || state.parsedPreferences?.place_intent || {};
+  const text = normalizeText(`${item.title} ${item.address}`);
+  const terms = [...new Set(getPlaceIntentTerms(state))];
+  const matchedTerms = terms.filter((term) => text.includes(term)).length;
+  const termScore = terms.length ? (matchedTerms / terms.length) * 3 : 0.8;
+  const ratingScore = Number(item.rating || 0) / 5 * 2;
+  const reviewCount = Number(item.user_ratings_total || 0);
+  const confidenceScore = clamp(Math.log10(reviewCount + 1) / 3, 0, 1);
+  const distanceKm = getDistanceKm(item);
+  const targetDistance = Number(intent.max_distance_km) || 10;
+  const distanceScore =
+    clamp(1 - distanceKm / Math.max(targetDistance, 1), 0, 1) * 2;
+  const priceScore =
+    intent.price === "cheap"
+      ? item.price_level === null || item.price_level === undefined
+        ? 0.25
+        : item.price_level <= 2
+          ? 1
+          : -0.7
+      : 0.35;
+  const openScore =
+    intent.open_now === true
+      ? item.open_now === true
+        ? 1
+        : -1
+      : item.open_now === true
+        ? 0.25
+        : 0;
+
+  return Number(
+    (
+      termScore +
+      ratingScore +
+      confidenceScore +
+      distanceScore +
+      priceScore +
+      openScore
+    ).toFixed(3)
+  );
+}
+
+function buildPlaceCompareReason(item, state) {
+  if (item.compare_reason) {
+    return item.compare_reason;
+  }
+
+  const intent = state.placeIntent || state.parsedPreferences?.place_intent || {};
+  const text = normalizeText(`${item.title} ${item.address}`);
+  const matchedTerms = [...new Set(getPlaceIntentTerms(state))]
+    .filter((term) => text.includes(term))
+    .slice(0, 3);
+  const details = [];
+
+  if (item.distance_text) {
+    details.push(`it is ${item.distance_text} away`);
+  }
+
+  if (item.rating) {
+    const reviewText = item.user_ratings_total
+      ? ` from ${item.user_ratings_total} reviews`
+      : "";
+    details.push(`it has a ${item.rating} rating${reviewText}`);
+  }
+
+  if (matchedTerms.length) {
+    details.push(`it lines up with ${matchedTerms.join(", ")}`);
+  }
+
+  if (item.open_now === true) {
+    details.push("it is open now");
+  }
+
+  const useCase = intent.use_case || intent.keywords || state.userInput || "your request";
+  const detailSentence = details.length
+    ? details.slice(0, 2).join("; ")
+    : "it balances relevance, distance, and rating";
+
+  return `Good fit for ${useCase}: ${detailSentence}.`;
+}
+
+function buildPlaceBestFor(item, state) {
+  if (item.best_for) {
+    return item.best_for;
+  }
+
+  const intent = state.placeIntent || state.parsedPreferences?.place_intent || {};
+
+  if (intent.open_now === true && item.open_now === true) {
+    return "open now";
+  }
+
+  if (intent.price === "cheap" && item.price_level !== null && item.price_level <= 2) {
+    return "budget friendly";
+  }
+
+  if (getDistanceKm(item) < 2) {
+    return "nearest option";
+  }
+
+  if (item.rating >= 4.5) {
+    return "highly rated";
+  }
+
+  return DEFAULT_BEST_FOR;
+}
+
+function scoreProductCandidate(item) {
+  if (Number.isFinite(Number(item.match_score))) {
+    return Number(item.match_score);
+  }
+
+  const title = normalizeText(item.title);
+  const queryTerms = normalizeText(item.summary || item.title)
+    .split(" ")
+    .filter((term) => term.length > 2);
+  const matchedTerms = queryTerms.filter((term) => title.includes(term)).length;
+
+  return matchedTerms || 0;
+}
+
+function hasDistanceFocus(state) {
+  const focus = Array.isArray(state.parsedPreferences?.ranking_focus)
+    ? state.parsedPreferences.ranking_focus.map(normalizeText)
+    : [];
+  const text = normalizeText([state.userInput, ...focus].filter(Boolean).join(" "));
+
+  return (
+    focus.includes("distance") ||
+    /near|nearby|nearest|closest|walking|distance|location|position|close/.test(text)
+  );
+}
+
 async function compareCandidatesNode(state) {
   console.time("compareCandidatesNode");
 
@@ -366,90 +555,65 @@ async function compareCandidatesNode(state) {
     };
   }
 
-  // 本地公式排序
-  const scored = state.normalizedCandidates.map((item) => {
-    const rating =
-      Number(item.rating || item.store_rating || 0);
+  // Local deterministic ranking.
+  if (state.category === "place") {
+    const distanceFirst = hasDistanceFocus(state);
+    const scored = state.normalizedCandidates
+      .map((item) => ({
+        ...item,
+        score: scorePlaceCandidate(item, state),
+      }))
+      .sort((a, b) => {
+        const distanceDiff = getDistanceKm(a) - getDistanceKm(b);
 
-    const distanceText =
-      item.distance_text || "";
+        if (distanceFirst && Math.abs(distanceDiff) > 0.5) {
+          return distanceDiff;
+        }
 
-    const distanceMatch =
-      distanceText.match(/[\d.]+/);
+        return (
+          b.score - a.score ||
+          Number(b.rating || 0) - Number(a.rating || 0) ||
+          distanceDiff
+        );
+      });
 
-    const distance =
-      distanceMatch
-        ? Number(distanceMatch[0])
-        : 10;
+    const comparisons = scored.map((item, index) => ({
+      index: item.index,
+      compare_rank: index + 1,
+      compare_reason: buildPlaceCompareReason(item, state),
+      best_for: buildPlaceBestFor(item, state),
+    }));
 
-    const score =
-      rating * 0.7 - distance * 0.3;
+    console.timeEnd("compareCandidatesNode");
 
     return {
-      ...item,
-      score,
+      comparisons,
+      recommendation:
+        "Ranked using intent match, rating confidence, distance, price, and availability.",
     };
-  });
+  }
 
-  scored.sort((a, b) => b.score - a.score);
+  const scored = state.normalizedCandidates
+    .map((item) => ({
+      ...item,
+      score: scoreProductCandidate(item),
+    }))
+    .sort((a, b) => b.score - a.score || a.index - b.index);
 
-  // 只对前3个生成 AI explanation
-  const topCandidates = scored.slice(0, 3);
-
-  console.time("deepseek_explanations");
-
-  const comparisons = await Promise.all(
-    topCandidates.map(async (item, index) => {
-      let reason =
-        `Highly rated (${item.rating || item.store_rating || "N/A"}) and nearby.`;
-
-      try {
-        const aiResponse =
-          await deepseek.chat.completions.create({
-            model: "deepseek-chat",
-            temperature: 0.7,
-            messages: [
-              {
-                role: "system",
-                content:
-                  "Write one short natural recommendation sentence for a local place.",
-              },
-              {
-                role: "user",
-                content: `
-Place: ${item.title}
-Rating: ${item.rating || item.store_rating}
-Distance: ${item.distance_text}
-
-User request:
-${state.userInput}
-`,
-              },
-            ],
-          });
-
-        reason =
-          aiResponse.choices[0].message.content.trim();
-      } catch (err) {
-        console.log("AI explanation failed");
-      }
-
-      return {
-        index: item.index,
-        compare_rank: index + 1,
-        compare_reason: reason,
-        best_for: "overall match",
-      };
-    })
-  );
-
-  console.timeEnd("deepseek_explanations");
+  const comparisons = scored.map((item, index) => ({
+    index: item.index,
+    compare_rank: index + 1,
+    compare_reason:
+      item.compare_reason ||
+      "Ranked by product title match, requested features, and budget fit.",
+    best_for: item.best_for || "product match",
+  }));
   console.timeEnd("compareCandidatesNode");
 
   return {
     comparisons,
     recommendation:
-      "Ranked using local scoring and AI explanations.",
+      "Ranked using product fit from shopping results.",
   };
 }
 

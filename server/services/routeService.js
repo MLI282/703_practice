@@ -24,7 +24,7 @@ async function geocode(place) {
 
     return res.data.results[0].formatted_address;
   } catch (err) {
-    console.log("Geocode失败:", place);
+    console.log("Geocode failed:", place);
     return place;
   }
 }
@@ -35,27 +35,30 @@ async function getRoute(userInput) {
     messages: [
       {
         role: "system",
-        content: `你是一个地图助手。\
-从用户输入中提取起点(from)和终点(to)，\
-并转换为 Google Maps 可识别的完整英文地址（必须包含城市和国家）。\
-\
-返回严格JSON：\
-{"from":"...","to":"..."}\
-\
-规则：\
-- 必须英文\
-- 尽量具体（街道或知名地点）\
-- 不要解释\
-\
-示例：\
-Sky Tower → Sky Tower, Victoria Street West, Auckland Central, Auckland 1010, New Zealand\
-University of Auckland → 34 Princes Street, Auckland, New Zealand`,
+        content: `
+You are a map assistant.
+Extract the origin ("from") and destination ("to") from the user's request.
+Convert both into complete English addresses that Google Maps can recognize.
+Include the city and country whenever possible.
+
+Return valid JSON only:
+{"from":"...","to":"..."}
+
+Rules:
+- Use English addresses.
+- Be as specific as possible, using street names or well-known landmarks.
+- Do not explain.
+
+Examples:
+Sky Tower -> Sky Tower, Victoria Street West, Auckland Central, Auckland 1010, New Zealand
+University of Auckland -> 34 Princes Street, Auckland, New Zealand
+`,
       },
       { role: "user", content: userInput },
     ],
   });
 
-  console.log("AI解析路线响应:", aiResponse.choices[0].message.content);
+  console.log("Route parse AI response:", aiResponse.choices[0].message.content);
 
   let from;
   let to;
@@ -65,18 +68,18 @@ University of Auckland → 34 Princes Street, Auckland, New Zealand`,
     from = parsed.from;
     to = parsed.to;
   } catch (e) {
-    console.log("⚠️ JSON解析失败，使用fallback");
+    console.log("Route JSON parse failed, using fallback.");
 
-    const parts = userInput.split("到");
+    const parts = userInput.split(/\s+to\s+/i);
     from = parts[0] || userInput;
     to = parts[1] || userInput;
   }
 
-  console.log("路线解析:", from, "→", to);
+  console.log("Parsed route:", from, "->", to);
 
   const fromAddr = await geocode(from);
   const toAddr = await geocode(to);
-  console.log("标准地址:", fromAddr, "→", toAddr);
+  console.log("Normalized addresses:", fromAddr, "->", toAddr);
 
   const response = await axios.get(
     "https://maps.googleapis.com/maps/api/directions/json",

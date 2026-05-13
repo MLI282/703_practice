@@ -107,7 +107,7 @@ async function search(req, res) {
     saveSearchHistory(req, result);
   } catch (err) {
     if (err.code === "AI_PARSE_FAILED") {
-      return res.status(400).json({ error: "AI解析失败" });
+      return res.status(400).json({ error: "AI parse failed" });
     }
 
     if (err.code === "AGENT_JSON_PARSE_FAILED") {
@@ -126,3 +126,4 @@ async function search(req, res) {
 module.exports = {
   search,
 };
+

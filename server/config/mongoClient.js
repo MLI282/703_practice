@@ -1,5 +1,5 @@
 const mongoose = require("mongoose");
-const { User, UserHistory, UserInfo } = require("../models");
+const { User, UserHistory, UserInfo, ShoppingCache } = require("../models");
 
 const DEFAULT_MONGO_URI = "mongodb://127.0.0.1:27017/agent_search";
 
@@ -59,12 +59,14 @@ async function ensureMongoCollections() {
     User.createCollection(),
     UserHistory.createCollection(),
     UserInfo.createCollection(),
+    ShoppingCache.createCollection(),
   ]);
 
   await Promise.all([
     User.syncIndexes(),
     UserHistory.syncIndexes(),
     UserInfo.syncIndexes(),
+    ShoppingCache.syncIndexes(),
   ]);
 }
 

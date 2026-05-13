@@ -15,7 +15,7 @@ async function search(req, res) {
     res.json(results);
   } catch (err) {
     if (err.code === "AI_PARSE_FAILED") {
-      return res.status(400).json({ error: "AI解析失败" });
+      return res.status(400).json({ error: "AI parse failed" });
     }
 
     console.error("Search error:", err?.response?.data || err);
@@ -54,3 +54,4 @@ module.exports = {
   search,
   reverseGeocode,
 };
+
