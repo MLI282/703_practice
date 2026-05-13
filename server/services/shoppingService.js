@@ -1,9 +1,110 @@
+const axios = require("axios");
+const deepseek = require("../config/deepseekClient");
+const serpSearch = require("../config/serpClient");
+const { GOOGLE_API_KEY } = require("../config/apiKeys");
+
+const PRODUCT_RESULT_LIMIT = 8;
+
+function serviceError(code) {
+  const err = new Error(code);
+  err.code = code;
+  return err;
+}
+
+async function searchGoogleShopping(query) {
+  return new Promise((resolve, reject) => {
+    serpSearch.json(
+      {
+        engine: "google_shopping",
+        q: query,
+        google_domain: "google.com",
+        gl: "nz",
+        hl: "en",
+        num: PRODUCT_RESULT_LIMIT,
+      },
+      (data) => {
+        if (data.error) {
+          reject(data.error);
+          return;
+        }
+
+        resolve((data.shopping_results || []).slice(0, PRODUCT_RESULT_LIMIT));
+      }
+    );
+  });
+}
+
+async function searchNearbyStores(lat, lng, storeType) {
+  const response = await axios.get(
+    "https://maps.googleapis.com/maps/api/place/textsearch/json",
+    {
+      params: {
+        query: storeType,
+        key: GOOGLE_API_KEY,
+        location: `${lat},${lng}`,
+        radius: 10000,
+      },
+    }
+  );
+
+  return (response.data.results || []).slice(0, 6).map((place) => ({
+    name: place.name,
+    rating: place.rating,
+    address: place.formatted_address,
+    location: place.geometry.location,
+    photo_url: place.photos?.[0]
+      ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photo_reference=${place.photos[0].photo_reference}&key=${GOOGLE_API_KEY}`
+      : null,
+  }));
+}
+
+async function computeDistances(lat, lng, stores) {
+  if (!stores.length) {
+    return [];
+  }
+
+  const response = await axios.post(
+    "https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix",
+    {
+      origins: [
+        {
+          waypoint: {
+            location: {
+              latLng: {
+                latitude: parseFloat(lat),
+                longitude: parseFloat(lng),
+              },
+            },
+          },
+        },
+      ],
+      destinations: stores.map((store) => ({
+        waypoint: {
+          location: {
+            latLng: {
+              latitude: store.location.lat,
+              longitude: store.location.lng,
+            },
+          },
+        },
+      })),
+      travelMode: "DRIVE",
+    },
+    {
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": GOOGLE_API_KEY,
+        "X-Goog-FieldMask": "originIndex,destinationIndex,distanceMeters,duration",
+      },
+    }
+  );
+
+  return response.data;
+}
+
 async function searchShopping({ userInput, lat, lng }) {
   console.time("shopping_total");
 
-  // =========================
-  // DeepSeek Shopping Parse
-  // =========================
   console.time("deepseek_shopping_parse");
 
   const response = await deepseek.chat.completions.create({
@@ -52,54 +153,34 @@ Clothes -> clothing store
   console.timeEnd("deepseek_shopping_parse");
 
   const raw = response.choices[0].message.content;
+  console.log("DeepSeek raw output:", raw);
 
-  console.log("🧠 DeepSeek原始输出:", raw);
-
-  const cleaned = raw
-    .replace(/```json/g, "")
-    .replace(/```/g, "")
-    .trim();
-
-  console.log("🧹 清洗后JSON:", cleaned);
+  const cleaned = raw.replace(/```json/g, "").replace(/```/g, "").trim();
+  console.log("Cleaned JSON:", cleaned);
 
   let parsed;
 
   try {
     parsed = JSON.parse(cleaned);
   } catch (e) {
-    console.log("❌ JSON解析失败:", cleaned);
+    console.log("JSON parse failed:", cleaned);
     throw serviceError("AGENT_JSON_PARSE_FAILED");
   }
 
-  // =========================
-  // Nearby Stores
-  // =========================
   console.time("nearby_stores");
 
-  const stores = await searchNearbyStores(
-    lat,
-    lng,
-    parsed.store_type
-  );
+  const stores = await searchNearbyStores(lat, lng, parsed.store_type);
 
   console.timeEnd("nearby_stores");
+  console.log("Stores:", stores.length);
 
-  console.log("🏪 Stores:", stores.length);
-
-  // =========================
-  // Parallel APIs
-  // =========================
   console.time("parallel_external_apis");
 
   const [matrix, products] = await Promise.all([
     (async () => {
       console.time("distance_matrix");
 
-      const result = await computeDistances(
-        lat,
-        lng,
-        stores
-      );
+      const result = await computeDistances(lat, lng, stores);
 
       console.timeEnd("distance_matrix");
 
@@ -109,9 +190,7 @@ Clothes -> clothing store
     (async () => {
       console.time("google_shopping");
 
-      const result = await searchGoogleShopping(
-        parsed.shopping_query
-      );
+      const result = await searchGoogleShopping(parsed.shopping_query);
 
       console.timeEnd("google_shopping");
 
@@ -121,68 +200,61 @@ Clothes -> clothing store
 
   console.timeEnd("parallel_external_apis");
 
-  const limitedProducts = products.slice(
-    0,
-    PRODUCT_RESULT_LIMIT
-  );
+  const limitedProducts = products.slice(0, PRODUCT_RESULT_LIMIT);
+  console.log("Products:", limitedProducts.length);
 
-  console.log("🛒 Products:", limitedProducts.length);
-
-  // =========================
-  // Format Results
-  // =========================
   console.time("shopping_result_format");
 
-  const finalResults = limitedProducts.map(
-    (product, index) => {
-      const store = stores[index % stores.length];
+  const finalResults = limitedProducts.map((product, index) => {
+    const store = stores.length ? stores[index % stores.length] : null;
+    const d = matrix.length ? matrix[index % matrix.length] : null;
 
-      const d = matrix[index % matrix.length];
+    const distanceText = d?.distanceMeters
+      ? `${(d.distanceMeters / 1000).toFixed(1)} km`
+      : null;
 
-      const distanceText = d?.distanceMeters
-        ? `${(d.distanceMeters / 1000).toFixed(1)} km`
-        : null;
+    const durationText = d?.duration
+      ? `${Math.round(parseInt(d.duration.replace("s", ""), 10) / 60)} mins`
+      : null;
 
-      const durationText = d?.duration
-        ? `${Math.round(
-            parseInt(d.duration.replace("s", "")) / 60
-          )} mins`
-        : null;
+    return {
+      product_title: product.title,
+      product_price: product.price,
+      product_image: product.thumbnail,
+      product_link: product.link,
+      source: product.source,
 
-      return {
-        product_title: product.title,
-        product_price: product.price,
-        product_image: product.thumbnail,
-        product_link: product.link,
-        source: product.source,
+      nearby_store: store?.name,
+      store_address: store?.address,
+      store_rating: store?.rating,
+      store_photo: store?.photo_url,
+      store_location: store?.location || null,
 
-        nearby_store: store?.name,
-        store_address: store?.address,
-        store_rating: store?.rating,
-        store_photo: store?.photo_url,
-        store_location: store?.location || null,
-
-        merchant: {
-          name: store?.name || null,
-          address: store?.address || null,
-          rating: store?.rating ?? null,
-          photo_url: store?.photo_url || null,
-          location: store?.location || null,
-          distance_text: distanceText,
-          duration_text: durationText,
-        },
-
+      merchant: {
+        name: store?.name || null,
+        address: store?.address || null,
+        rating: store?.rating ?? null,
+        photo_url: store?.photo_url || null,
+        location: store?.location || null,
         distance_text: distanceText,
         duration_text: durationText,
+      },
 
-        agent_reasoning: parsed.reasoning,
-      };
-    }
-  );
+      distance_text: distanceText,
+      duration_text: durationText,
+      agent_reasoning: parsed.reasoning,
+    };
+  });
 
   console.timeEnd("shopping_result_format");
-
   console.timeEnd("shopping_total");
 
   return finalResults;
 }
+
+module.exports = {
+  searchShopping,
+  searchGoogleShopping,
+  searchNearbyStores,
+  computeDistances,
+};
