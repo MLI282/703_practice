@@ -2,6 +2,14 @@ const mongoose = require("mongoose");
 
 const advertisementSchema = new mongoose.Schema(
   {
+    slug: {
+      type: String,
+      required: true,
+      unique: true,
+      lowercase: true,
+      trim: true,
+      index: true,
+    },
     title: {
       type: String,
       required: true,

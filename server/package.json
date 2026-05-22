@@ -11,7 +11,8 @@
   },
   "scripts": {
     "dev": "node --watch server.js",
-    "start": "node server.js"
+    "start": "node server.js",
+    "seed:ads": "node seeds/advertisements.seed.js"
   },
   "keywords": [],
   "author": "",
