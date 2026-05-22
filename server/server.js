@@ -22,8 +22,31 @@ const {
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const DEFAULT_ALLOWED_ORIGINS = [
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+];
 
-app.use(cors());
+function getAllowedOrigins() {
+  const configuredOrigins = (process.env.CORS_ORIGINS || "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  return configuredOrigins.length ? configuredOrigins : DEFAULT_ALLOWED_ORIGINS;
+}
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin || getAllowedOrigins().includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error(`CORS blocked origin: ${origin}`));
+    },
+  })
+);
 app.use(express.json());
 
 app.get("/", homeController.index);
