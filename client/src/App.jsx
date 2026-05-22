@@ -567,19 +567,6 @@ function PersistentAdBar() {
     }
   }, [])
 
-  useEffect(() => {
-    if (!advertisements.length) {
-      document.body.classList.remove('ad-bar-visible')
-      return undefined
-    }
-
-    document.body.classList.add('ad-bar-visible')
-
-    return () => {
-      document.body.classList.remove('ad-bar-visible')
-    }
-  }, [advertisements.length])
-
   if (!advertisements.length) {
     return null
   }
@@ -588,26 +575,23 @@ function PersistentAdBar() {
 
   return (
     <aside className="ad-bar" aria-label="Advertisements">
-      <div className="ad-bar-inner">
-        <span className="ad-label">Sponsored</span>
-        <div className="ad-viewport">
-          <div className="ad-track">
-            {trackItems.map((advertisement, index) => (
-              <a
-                className="ad-item"
-                href={advertisement.websiteUrl}
-                key={`${advertisement._id || advertisement.imageUrl}-${index}`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                <img
-                  src={advertisement.imageUrl}
-                  alt={advertisement.title || 'Advertisement'}
-                />
-              </a>
-            ))}
-          </div>
-        </div>
+      <span className="ad-label">Sponsored</span>
+      <div className="ad-track">
+        {trackItems.map((advertisement, index) => (
+          <a
+            className="ad-item"
+            href={advertisement.websiteUrl}
+            key={`${advertisement._id || advertisement.imageUrl}-${index}`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            <img
+              src={advertisement.imageUrl}
+              alt={advertisement.title || 'Advertisement'}
+              loading="lazy"
+            />
+          </a>
+        ))}
       </div>
     </aside>
   )

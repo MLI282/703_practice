@@ -706,44 +706,29 @@ h1 {
 
 .ad-bar {
   position: fixed;
-  right: 0;
-  bottom: 0;
-  left: 0;
+  right: 12px;
+  bottom: 12px;
+  left: 12px;
   z-index: 30;
-  height: 74px;
-  border-top: 1px solid rgba(96, 48, 0, 0.1);
-  background: rgba(255, 250, 240, 0.94);
-  box-shadow: 0 -8px 22px rgba(88, 47, 0, 0.1);
-  backdrop-filter: blur(10px);
-}
-
-.ad-bar-inner {
-  width: min(1180px, calc(100% - 32px));
-  height: 100%;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  max-width: 1180px;
+  height: 62px;
+  display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   margin: 0 auto;
-}
-
-.ad-label {
-  color: #8a4300;
-  font-size: 12px;
-  font-weight: 900;
-  text-transform: uppercase;
-}
-
-.ad-viewport {
-  min-width: 0;
   overflow: hidden;
+  padding: 8px 10px;
+  border: 1px solid rgba(96, 48, 0, 0.12);
+  border-radius: 8px;
+  background: #fffaf0;
+  box-shadow: 0 8px 24px rgba(88, 47, 0, 0.14);
 }
 
 .ad-track {
   display: flex;
-  width: max-content;
   gap: 10px;
-  animation: ad-scroll 34s linear infinite;
+  min-width: max-content;
+  animation: ad-scroll 28s linear infinite;
 }
 
 .ad-track:hover {
@@ -752,8 +737,8 @@ h1 {
 
 .ad-item {
   display: block;
-  width: 260px;
-  height: 48px;
+  width: 220px;
+  height: 44px;
   overflow: hidden;
   flex: 0 0 auto;
   border: 1px solid rgba(96, 48, 0, 0.1);
@@ -773,13 +758,12 @@ h1 {
   object-fit: cover;
 }
 
-.ad-bar-visible .app-shell {
-  padding-bottom: 112px;
-}
-
-.ad-bar-visible .auth-shell {
-  min-height: calc(100vh - 74px);
-  padding-bottom: 86px;
+.ad-label {
+  flex: 0 0 auto;
+  color: #8a4300;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
 }
 
 @keyframes ad-scroll {
@@ -873,29 +857,19 @@ h1 {
   }
 
   .ad-bar {
-    height: 68px;
+    right: 10px;
+    bottom: 10px;
+    left: 10px;
+    height: 56px;
+    padding: 7px;
   }
 
-  .ad-bar-inner {
-    width: min(100% - 20px, 1180px);
-    grid-template-columns: 1fr;
+  .ad-item {
+    width: 190px;
+    height: 40px;
   }
 
   .ad-label {
     display: none;
-  }
-
-  .ad-item {
-    width: 220px;
-    height: 46px;
-  }
-
-  .ad-bar-visible .app-shell {
-    padding-bottom: 96px;
-  }
-
-  .ad-bar-visible .auth-shell {
-    min-height: calc(100vh - 68px);
-    padding-bottom: 78px;
   }
 }
