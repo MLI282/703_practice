@@ -571,28 +571,23 @@ function PersistentAdBar() {
     return null
   }
 
-  const trackItems = [...advertisements, ...advertisements]
+  const advertisement = advertisements[0]
 
   return (
     <aside className="ad-bar" aria-label="Advertisements">
       <span className="ad-label">Sponsored</span>
-      <div className="ad-track">
-        {trackItems.map((advertisement, index) => (
-          <a
-            className="ad-item"
-            href={advertisement.websiteUrl}
-            key={`${advertisement._id || advertisement.imageUrl}-${index}`}
-            target="_blank"
-            rel="noreferrer"
-          >
-            <img
-              src={advertisement.imageUrl}
-              alt={advertisement.title || 'Advertisement'}
-              loading="lazy"
-            />
-          </a>
-        ))}
-      </div>
+      <a
+        className="ad-item"
+        href={advertisement.websiteUrl}
+        target="_blank"
+        rel="noreferrer"
+      >
+        <img
+          src={advertisement.imageUrl}
+          alt={advertisement.title || 'Advertisement'}
+          loading="lazy"
+        />
+      </a>
     </aside>
   )
 }
