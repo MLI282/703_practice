@@ -12,6 +12,7 @@ const placesController = require("./controllers/placesController");
 const routeController = require("./controllers/routeController");
 const shoppingController = require("./controllers/shoppingController");
 const agentCompareController = require("./controllers/agentCompareController");
+const advertisementController = require("./controllers/advertisementController");
 const authController = require("./controllers/authController");
 const historyController = require("./controllers/historyController");
 const {
@@ -31,6 +32,7 @@ app.get("/reverse-geocode", placesController.reverseGeocode);
 app.get("/route", routeController.getRoute);
 app.get("/shop-search", optionalAuth, shoppingController.search);
 app.get("/agent-search", optionalAuth, agentCompareController.search);
+app.get("/ads", advertisementController.list);
 app.post("/auth/register", authController.register);
 app.post("/auth/login", authController.login);
 app.get("/history", requireAuth, historyController.list);
