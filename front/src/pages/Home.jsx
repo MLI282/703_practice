@@ -5,6 +5,8 @@ import SearchBar from "../components/SearchBar";
 import PlaceCard from "../components/PlaceCard";
 import AgentSearchPanel from "../components/AgentSearchPanel";
 
+const GOOGLE_MAPS_API_KEY = process.env.REACT_APP_GOOGLE_MAPS_API_KEY || "";
+
 function Home() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
@@ -120,7 +122,7 @@ function Home() {
 
   return (
     <LoadScript
-      googleMapsApiKey="AIzaSyDmJYMiPEdbrS6_Nfn_QwfSPYdlWjieh50"
+      googleMapsApiKey={GOOGLE_MAPS_API_KEY}
       libraries={["geometry"]}
     >
       <div style={{ padding: 20 }}>

@@ -13,7 +13,7 @@ import './App.css'
 
 const API_BASE = 'http://localhost:3001'
 const AUTH_STORAGE_KEY = 'agent_search_auth'
-const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyDmJYMiPEdbrS6_Nfn_QwfSPYdlWjieh50'
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''
 const DEFAULT_LOCATION = {
   lat: -36.8485,
   lng: 174.7633,

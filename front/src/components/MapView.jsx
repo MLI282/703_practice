@@ -15,8 +15,6 @@ function MapView({
   end,
 }) {
   return (
-    //AIzaSyDmJYMiPEdbrS6_Nfn_QwfSPYdlWjieh50
-
       <div style={{ position: "relative" }}>
         {/* 🏷️ 图例 */}
         <div
