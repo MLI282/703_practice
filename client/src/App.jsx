@@ -614,6 +614,86 @@ function AdSpot() {
   )
 }
 
+function PersistentAdBar() {
+  const [advertisements, setAdvertisements] = useState([])
+
+  useEffect(() => {
+    let isMounted = true
+
+    fetch(`${API_BASE}/ads`)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error('Advertisement request failed')
+        }
+
+        return response.json()
+      })
+      .then((data) => {
+        if (isMounted) {
+          const nextAdvertisements = Array.isArray(data)
+            ? data
+            : data.advertisements
+
+          setAdvertisements(
+            Array.isArray(nextAdvertisements) ? nextAdvertisements : [],
+          )
+        }
+      })
+      .catch((err) => {
+        console.error('Advertisements failed to load:', err)
+      })
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!advertisements.length) {
+      document.body.classList.remove('ad-bar-visible')
+      return undefined
+    }
+
+    document.body.classList.add('ad-bar-visible')
+
+    return () => {
+      document.body.classList.remove('ad-bar-visible')
+    }
+  }, [advertisements.length])
+
+  if (!advertisements.length) {
+    return null
+  }
+
+  const trackItems = [...advertisements, ...advertisements]
+
+  return (
+    <aside className="ad-bar" aria-label="Advertisements">
+      <div className="ad-bar-inner">
+        <span className="ad-label">Sponsored</span>
+        <div className="ad-viewport">
+          <div className="ad-track">
+            {trackItems.map((advertisement, index) => (
+              <a
+                className="ad-item"
+                href={advertisement.websiteUrl}
+                key={`${advertisement._id || advertisement.imageUrl}-${index}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <img
+                  src={advertisement.imageUrl}
+                  alt={advertisement.title || 'Advertisement'}
+                />
+              </a>
+            ))}
+          </div>
+        </div>
+      </div>
+    </aside>
+  )
+}
+
 function SearchPage({ auth, onLogout }) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState([])
@@ -988,6 +1068,7 @@ function App() {
   return (
     <BrowserRouter>
       <AppRoutes />
+      <PersistentAdBar />
     </BrowserRouter>
   )
 }
