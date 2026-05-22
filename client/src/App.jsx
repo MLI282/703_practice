@@ -533,8 +533,9 @@ function ProtectedRoute({ auth, children }) {
   return children
 }
 
-function PersistentAdBar() {
+function AdSpot() {
   const [advertisements, setAdvertisements] = useState([])
+  const [activeIndex, setActiveIndex] = useState(0)
 
   useEffect(() => {
     let isMounted = true
@@ -567,17 +568,38 @@ function PersistentAdBar() {
     }
   }, [])
 
+  useEffect(() => {
+    if (advertisements.length < 2) {
+      return undefined
+    }
+
+    const intervalId = window.setInterval(() => {
+      setActiveIndex((index) => (index + 1) % advertisements.length)
+    }, 4000)
+
+    return () => {
+      window.clearInterval(intervalId)
+    }
+  }, [advertisements.length])
+
   if (!advertisements.length) {
     return null
   }
 
-  const advertisement = advertisements[0]
+  const advertisement = advertisements[activeIndex] || advertisements[0]
 
   return (
-    <aside className="ad-bar" aria-label="Advertisements">
-      <span className="ad-label">Sponsored</span>
+    <aside className="ad-spot" aria-label="Advertisements">
+      <div className="ad-spot-header">
+        <span>Sponsored</span>
+        {advertisements.length > 1 && (
+          <span>
+            {activeIndex + 1}/{advertisements.length}
+          </span>
+        )}
+      </div>
       <a
-        className="ad-item"
+        className="ad-card"
         href={advertisement.websiteUrl}
         target="_blank"
         rel="noreferrer"
@@ -676,13 +698,16 @@ function SearchPage({ auth, onLogout }) {
       </header>
 
       <section className="search-panel">
-        <div className="copy">
-          <p className="eyebrow">LangGraph Agent Interface</p>
-          <h1>Compare places and products from one agent search.</h1>
-          <p className="intro">
-            This client only calls the current workflow endpoint and displays
-            the returned images, key details, ranking, and recommendation.
-          </p>
+        <div className="search-panel-top">
+          <div className="copy">
+            <p className="eyebrow">LangGraph Agent Interface</p>
+            <h1>Compare places and products from one agent search.</h1>
+            <p className="intro">
+              This client only calls the current workflow endpoint and displays
+              the returned images, key details, ranking, and recommendation.
+            </p>
+          </div>
+          <AdSpot />
         </div>
 
         <form className="search-form" onSubmit={searchAgent}>
@@ -963,7 +988,6 @@ function App() {
   return (
     <BrowserRouter>
       <AppRoutes />
-      <PersistentAdBar />
     </BrowserRouter>
   )
 }
