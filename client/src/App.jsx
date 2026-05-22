@@ -11,7 +11,7 @@ import {
 } from 'react-router-dom'
 import './App.css'
 
-const API_BASE = 'http://localhost:3001'
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001'
 const AUTH_STORAGE_KEY = 'agent_search_auth'
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''
 const DEFAULT_LOCATION = {

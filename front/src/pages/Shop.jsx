@@ -4,6 +4,7 @@ import React, {
 } from "react";
 
 const PRODUCT_RESULT_LIMIT = 8;
+const API_BASE = process.env.REACT_APP_API_BASE_URL || "http://localhost:3001";
 
 function getMerchantMapsUrl(product) {
   const merchant = product.merchant || {};
@@ -76,7 +77,7 @@ function Shop() {
         setLoading(true);
 
         const res = await fetch(
-          `http://localhost:3001/shop-search?q=${encodeURIComponent(
+          `${API_BASE}/shop-search?q=${encodeURIComponent(
             query
           )}&lat=${center.lat}&lng=${center.lng}`
         );

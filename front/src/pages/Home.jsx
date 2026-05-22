@@ -6,6 +6,7 @@ import PlaceCard from "../components/PlaceCard";
 import AgentSearchPanel from "../components/AgentSearchPanel";
 
 const GOOGLE_MAPS_API_KEY = process.env.REACT_APP_GOOGLE_MAPS_API_KEY || "";
+const API_BASE = process.env.REACT_APP_API_BASE_URL || "http://localhost:3001";
 
 function Home() {
   const [query, setQuery] = useState("");
@@ -41,7 +42,7 @@ function Home() {
 
   const searchPlaces = async () => {
     const res = await fetch(
-      `http://localhost:3001/search?q=${encodeURIComponent(query)}&lat=${
+      `${API_BASE}/search?q=${encodeURIComponent(query)}&lat=${
         center.lat
       }&lng=${center.lng}`
     );
@@ -81,7 +82,7 @@ function Home() {
       setRouteResult(null);
 
       const res = await fetch(
-        `http://localhost:3001/route?q=${encodeURIComponent(routeQuery)}`
+        `${API_BASE}/route?q=${encodeURIComponent(routeQuery)}`
       );
       const data = await res.json();
 
@@ -97,7 +98,7 @@ function Home() {
 
       if (userLocation) {
         const geoRes = await fetch(
-          `http://localhost:3001/reverse-geocode?lat=${userLocation.lat}&lng=${userLocation.lng}`
+          `${API_BASE}/reverse-geocode?lat=${userLocation.lat}&lng=${userLocation.lng}`
         );
         const geoData = await geoRes.json();
 
@@ -110,7 +111,7 @@ function Home() {
       setRouteQuery(nextRouteQuery);
 
       const res = await fetch(
-        `http://localhost:3001/route?q=${encodeURIComponent(nextRouteQuery)}`
+        `${API_BASE}/route?q=${encodeURIComponent(nextRouteQuery)}`
       );
       const data = await res.json();
 

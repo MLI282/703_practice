@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 
 const PRODUCT_RESULT_LIMIT = 8;
+const API_BASE = process.env.REACT_APP_API_BASE_URL || "http://localhost:3001";
 
 function isProductResult(item) {
   return Boolean(item.product_title || item.type === "product");
@@ -298,7 +299,7 @@ function AgentSearchPanel({ center }) {
       setError("");
 
       const res = await fetch(
-        `http://localhost:3001/agent-search?q=${encodeURIComponent(
+        `${API_BASE}/agent-search?q=${encodeURIComponent(
           query
         )}&lat=${center.lat}&lng=${center.lng}`
       );
