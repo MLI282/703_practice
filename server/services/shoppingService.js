@@ -177,6 +177,16 @@ function parsePriceToNumber(price) {
   return match ? Number(match[0]) : null;
 }
 
+function getProductLink(product) {
+  return (
+    product.link ||
+    product.product_link ||
+    product.serpapi_product_api ||
+    product.source_link ||
+    ""
+  );
+}
+
 function getSearchTerms(text) {
   return normalizeText(text)
     .split(" ")
@@ -691,7 +701,7 @@ async function searchShopping({ userInput, lat, lng }) {
       product_title: product.title,
       product_price: product.price,
       product_image: product.thumbnail,
-      product_link: product.link,
+      product_link: getProductLink(product),
       source: product.source,
 
       nearby_store: store?.name,

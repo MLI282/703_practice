@@ -20,6 +20,7 @@ function createHistoryResults(results) {
     type: "product",
     imageUrl: item.product_image || "",
     productImage: item.product_image || null,
+    productLink: item.product_link || null,
     rank: item.compare_rank,
     reason: item.compare_reason,
     bestFor: item.best_for,

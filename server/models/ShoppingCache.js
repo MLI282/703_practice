@@ -10,7 +10,14 @@ const shoppingCacheSchema = new mongoose.Schema(
     },
     kind: {
       type: String,
-      enum: ["intent", "products", "stores", "place_intent", "places"],
+      enum: [
+        "intent",
+        "products",
+        "stores",
+        "place_intent",
+        "places",
+        "place_details",
+      ],
       required: true,
       index: true,
     },

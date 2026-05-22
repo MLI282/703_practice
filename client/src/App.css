@@ -589,11 +589,16 @@ h1 {
 }
 
 .actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
   margin-top: 16px;
 }
 
 .actions a {
-  display: block;
+  display: grid;
+  min-height: 44px;
+  align-items: center;
   padding: 12px;
   border-radius: 8px;
   background: #f28c00;
@@ -601,6 +606,12 @@ h1 {
   font-weight: 900;
   text-align: center;
   text-decoration: none;
+}
+
+.actions a.secondary-action {
+  border: 1px solid rgba(96, 48, 0, 0.16);
+  background: #fff8e8;
+  color: #5b3200;
 }
 
 .empty-state {

@@ -4,9 +4,10 @@ const { GOOGLE_API_KEY } = require("../config/apiKeys");
 const { ShoppingCache } = require("../models");
 
 const DEFAULT_DISTANCE_KM = 20;
-const PLACE_CACHE_VERSION = "place-ranking-v6-soft-distance";
+const PLACE_CACHE_VERSION = "place-ranking-v7-website-top3";
 const PLACE_INTENT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const PLACE_RESULTS_CACHE_TTL_MS = 30 * 60 * 1000;
+const PLACE_DETAILS_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const PLACE_TYPE_SYNONYMS = {
   restaurant: ["restaurant", "dining", "food", "meal"],
   cafe: ["cafe", "coffee", "tea"],
@@ -352,6 +353,69 @@ function filterPlaces(places, cond) {
   });
 }
 
+async function fetchPlaceWebsite(placeId) {
+  if (!placeId) {
+    return "";
+  }
+
+  const cacheKey = makeCacheKey("place_details", [placeId]);
+  const cachedDetails = await readCache(cacheKey);
+
+  if (cachedDetails) {
+    return cachedDetails.website || "";
+  }
+
+  try {
+    const response = await axios.get(
+      "https://maps.googleapis.com/maps/api/place/details/json",
+      {
+        params: {
+          place_id: placeId,
+          fields: "website",
+          key: GOOGLE_API_KEY,
+        },
+        timeout: 2500,
+      }
+    );
+
+    const website = response.data.result?.website || "";
+
+    if (website) {
+      console.log("Place website found:", website);
+    }
+
+    await writeCache(
+      cacheKey,
+      "place_details",
+      { website },
+      PLACE_DETAILS_CACHE_TTL_MS
+    );
+
+    return website;
+  } catch (err) {
+    console.warn("Place website lookup failed:", err.message);
+    return "";
+  }
+}
+
+async function addWebsitesToTopPlaces(places, limit = 6) {
+  const topPlaces = places.slice(0, limit);
+  const websites = await Promise.all(
+    topPlaces.map((place) => fetchPlaceWebsite(place.place_id))
+  );
+
+  return places.map((place, index) => {
+    if (index >= limit || !websites[index]) {
+      return place;
+    }
+
+    return {
+      ...place,
+      website: websites[index],
+    };
+  });
+}
+
 function buildParsedFromPlaceIntent(placeIntent) {
   if (!placeIntent) {
     return null;
@@ -511,6 +575,7 @@ Rules:
   }
 
   const places = response.data.results.slice(0, 10).map((place) => ({
+    place_id: place.place_id,
     name: place.name,
     rating: place.rating,
     user_ratings_total: place.user_ratings_total ?? null,
@@ -617,7 +682,7 @@ Rules:
       );
     });
 
-  const results = filtered;
+  const results = await addWebsitesToTopPlaces(filtered);
 
   await writeCache(
     resultsCacheKey,
@@ -658,4 +723,5 @@ async function reverseGeocode({ lat, lng }) {
 module.exports = {
   searchPlaces,
   reverseGeocode,
+  addWebsitesToTopPlaces,
 };

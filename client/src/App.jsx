@@ -292,6 +292,8 @@ function ResultCard({ item }) {
   const bestFor = item.best_for || item.bestFor
   const reason = item.compare_reason || item.reason
   const price = item.product_price || item.price
+  const productLink = item.product_link || item.productLink
+  const website = item.website || item.websiteUrl || item.officialWebsite
   const distanceText = item.distance_text || item.distanceText
   const durationText = item.duration_text || item.durationText
   const merchant = isProduct ? getMerchant(item) : null
@@ -371,13 +373,24 @@ function ResultCard({ item }) {
         {reason && <p className="reason">{reason}</p>}
 
         <div className="actions">
-          {item.product_link && (
-            <a href={item.product_link} target="_blank" rel="noreferrer">
+          {website && (
+            <a
+              className="secondary-action"
+              href={website}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Visit website
+            </a>
+          )}
+
+          {productLink && (
+            <a href={productLink} target="_blank" rel="noreferrer">
               View product
             </a>
           )}
 
-          {!item.product_link && item.location && (
+          {!productLink && item.location && (
             <a
               href={`https://www.google.com/maps/dir/?api=1&destination=${item.location.lat},${item.location.lng}`}
               target="_blank"

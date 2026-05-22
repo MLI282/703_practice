@@ -617,7 +617,7 @@ async function compareCandidatesNode(state) {
   };
 }
 
-function formatResponseNode(state) {
+async function formatResponseNode(state) {
   console.time("formatResponseNode");
 
   const comparisonByIndex = new Map(
@@ -663,12 +663,16 @@ function formatResponseNode(state) {
       ? PLACE_RESULT_LIMIT
       : PRODUCT_RESULT_LIMIT;
 
-  const results = enriched
+  let results = enriched
     .slice(0, resultLimit)
     .map((item) => {
       const { __original_index, ...result } = item;
       return result;
     });
+
+  if (state.category === "place") {
+    results = await placesService.addWebsitesToTopPlaces(results);
+  }
 
   console.timeEnd("formatResponseNode");
 
