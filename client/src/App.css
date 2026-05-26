@@ -129,6 +129,20 @@
   white-space: nowrap;
 }
 
+.vip-inline-badge {
+  display: inline-grid;
+  min-height: 22px;
+  align-items: center;
+  margin-left: 8px;
+  padding: 0 8px;
+  border-radius: 8px;
+  background: #2c1800;
+  color: #fff7e8;
+  font-size: 11px;
+  font-weight: 900;
+  vertical-align: middle;
+}
+
 .top-bar button {
   min-width: 104px;
 }
@@ -655,6 +669,12 @@ h1 {
   font-size: clamp(34px, 5vw, 56px);
 }
 
+.history-plan {
+  margin: 12px 0 0;
+  color: #5b3200;
+  font-weight: 800;
+}
+
 .history-list {
   display: grid;
   gap: 14px;
@@ -704,6 +724,19 @@ h1 {
   font-weight: 900;
 }
 
+.favorite-label {
+  display: inline-grid;
+  min-height: 22px;
+  align-items: center;
+  margin-left: 8px;
+  padding: 0 8px;
+  border-radius: 8px;
+  background: #2c1800;
+  color: #fff7e8;
+  font-size: 11px;
+  font-weight: 900;
+}
+
 .history-count {
   flex: 0 0 auto;
   padding: 8px 10px;
@@ -711,7 +744,176 @@ h1 {
   background: #fff1ce;
 }
 
+.history-actions,
+.history-detail-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.favorite-button {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid rgba(96, 48, 0, 0.16);
+  border-radius: 8px;
+  background: #fff8e8;
+  color: #5b3200;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.favorite-button.active {
+  border-color: transparent;
+  background: #2c1800;
+  color: #fff7e8;
+}
+
+.vip-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 24px;
+  align-items: start;
+  padding: 42px;
+  border: 1px solid rgba(96, 48, 0, 0.16);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.34)),
+    #ffc247;
+  box-shadow: 0 24px 60px rgba(145, 76, 0, 0.18);
+}
+
+.vip-panel h1 {
+  font-size: clamp(34px, 5vw, 58px);
+}
+
+.vip-hero-copy {
+  min-width: 0;
+}
+
+.vip-expiry {
+  margin: 16px 0 0;
+  color: #5b3200;
+  font-weight: 900;
+}
+
+.vip-action-panel {
+  display: grid;
+  justify-items: stretch;
+  align-self: stretch;
+}
+
+.vip-feature-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.vip-feature-list div {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  border: 1px solid rgba(96, 48, 0, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.66);
+}
+
+.vip-feature-list strong {
+  color: #2c1800;
+  font-size: 15px;
+}
+
+.vip-feature-list span {
+  color: #5b3200;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.vip-subscription-card {
+  display: grid;
+  grid-template-rows: auto auto auto 1fr auto auto;
+  gap: 12px;
+  height: 100%;
+  padding: 14px;
+  border: 1px solid rgba(96, 48, 0, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.vip-price-card {
+  display: grid;
+  gap: 4px;
+  padding: 16px;
+  border-radius: 8px;
+  background: #2c1800;
+}
+
+.vip-price-card span,
+.vip-status-row span {
+  color: #8a4300;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.vip-price-card span {
+  color: #ffc247;
+}
+
+.vip-price-card strong,
+.vip-status-row strong {
+  color: #2c1800;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.vip-price-card strong {
+  color: #fff7e8;
+  font-size: 46px;
+}
+
+.vip-price-card p,
+.vip-status-note {
+  margin: 0;
+  color: #5b3200;
+  line-height: 1.45;
+}
+
+.vip-price-card p {
+  color: #ffe5aa;
+  font-weight: 900;
+}
+
+.vip-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.vip-status-note {
+  font-size: 13px;
+}
+
+.vip-action-panel button {
+  align-self: end;
+  min-height: 50px;
+  border: 0;
+  border-radius: 8px;
+  background: #2c1800;
+  color: #fff7e8;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.vip-action-panel button:disabled {
+  cursor: default;
+  opacity: 0.68;
+}
+
 .ad-spot {
+  align-self: start;
   width: 100%;
   min-width: 0;
   overflow: hidden;
@@ -892,6 +1094,20 @@ h1 {
     padding: 24px;
   }
 
+  .vip-panel {
+    grid-template-columns: 1fr;
+    align-items: start;
+    padding: 24px;
+  }
+
+  .vip-subscription-card {
+    height: auto;
+  }
+
+  .vip-feature-list {
+    grid-template-columns: 1fr;
+  }
+
   .secondary-link {
     justify-content: center;
   }
@@ -903,6 +1119,12 @@ h1 {
 
   .history-count {
     align-self: flex-start;
+  }
+
+  .history-actions,
+  .history-detail-actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .search-panel {

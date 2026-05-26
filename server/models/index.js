@@ -3,6 +3,7 @@ const UserHistory = require("./UserHistory");
 const UserInfo = require("./UserInfo");
 const ShoppingCache = require("./ShoppingCache");
 const Advertisement = require("./Advertisement");
+const SearchUsage = require("./SearchUsage");
 
 module.exports = {
   User,
@@ -10,4 +11,5 @@ module.exports = {
   UserInfo,
   ShoppingCache,
   Advertisement,
+  SearchUsage,
 };

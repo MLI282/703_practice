@@ -67,13 +67,34 @@ function clearStoredAuth() {
   localStorage.removeItem(AUTH_STORAGE_KEY)
 }
 
+function isVipUser(auth) {
+  if (!auth?.user) {
+    return false
+  }
+
+  if (auth.user.membership !== 'vip' && auth.user.isVip !== true) {
+    return false
+  }
+
+  if (!auth.user.vipExpiresAt) {
+    return true
+  }
+
+  return new Date(auth.user.vipExpiresAt) > new Date()
+}
+
 async function fetchWithAuth(path, auth, options = {}) {
+  const headers = {
+    ...(options.headers || {}),
+  }
+
+  if (auth?.token) {
+    headers.Authorization = `Bearer ${auth.token}`
+  }
+
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
-    headers: {
-      ...(options.headers || {}),
-      Authorization: `Bearer ${auth.token}`,
-    },
+    headers,
   })
   const contentType = response.headers.get('content-type') || ''
   const data = contentType.includes('application/json')
@@ -699,8 +720,10 @@ function SearchPage({ auth, onLogout }) {
   const [results, setResults] = useState([])
   const [location, setLocation] = useState(DEFAULT_LOCATION)
   const [locationStatus, setLocationStatus] = useState('Using Auckland fallback')
+  const [quota, setQuota] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const isVip = isVipUser(auth)
 
   useEffect(() => {
     if (!navigator.geolocation) {
@@ -739,12 +762,34 @@ function SearchPage({ auth, onLogout }) {
       setLoading(true)
       setError('')
 
-      const data = await fetchWithAuth(
-        `/agent-search?q=${encodeURIComponent(query)}&lat=${
+      const headers = {}
+
+      if (auth?.token) {
+        headers.Authorization = `Bearer ${auth.token}`
+      }
+
+      const response = await fetch(
+        `${API_BASE}/agent-search?q=${encodeURIComponent(query)}&lat=${
           location.lat
         }&lng=${location.lng}`,
-        auth,
+        {
+          headers,
+        },
       )
+      const data = await response.json()
+      const nextQuota = {
+        plan: response.headers.get('x-search-plan') || '',
+        limit: Number(response.headers.get('x-search-limit') || 0),
+        remaining: Number(response.headers.get('x-search-remaining') || 0),
+      }
+
+      if (nextQuota.limit) {
+        setQuota(nextQuota)
+      }
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Agent search failed')
+      }
 
       setResults(limitProductResults(data))
     } catch (err) {
@@ -766,14 +811,27 @@ function SearchPage({ auth, onLogout }) {
     <main className="app-shell">
       <header className="top-bar">
         <div>
-          <span className="session-label">Signed in as</span>
-          <strong>{auth.user?.username || auth.user?.email}</strong>
+          <span className="session-label">{auth?.token ? 'Signed in as' : 'Guest mode'}</span>
+          <strong>
+            {auth?.user?.username || auth?.user?.email || 'Anonymous user'}
+            {isVip && <span className="vip-inline-badge">VIP</span>}
+          </strong>
         </div>
         <nav className="top-actions">
-          <Link to="/history">History</Link>
-          <button type="button" onClick={logout}>
-            Sign out
-          </button>
+          {auth?.token ? (
+            <>
+              <Link to="/history">History</Link>
+              <Link to="/vip">{isVip ? 'VIP active' : 'Go VIP'}</Link>
+              <button type="button" onClick={logout}>
+                Sign out
+              </button>
+            </>
+          ) : (
+            <>
+              <Link to="/login">Sign in</Link>
+              <Link to="/register">Create account</Link>
+            </>
+          )}
         </nav>
       </header>
 
@@ -787,7 +845,7 @@ function SearchPage({ auth, onLogout }) {
               the returned images, key details, ranking, and recommendation.
             </p>
           </div>
-          <AdSpot />
+          {!isVip && <AdSpot />}
         </div>
 
         <form className="search-form" onSubmit={searchAgent}>
@@ -806,6 +864,11 @@ function SearchPage({ auth, onLogout }) {
           <span>
             {location.lat.toFixed(4)}, {location.lng.toFixed(4)}
           </span>
+          {quota && (
+            <span>
+              {quota.plan || 'guest'} quota: {quota.remaining}/{quota.limit} left today
+            </span>
+          )}
         </div>
       </section>
 
@@ -859,16 +922,29 @@ function formatDateTime(value) {
 
 function HistoryListPage({ auth }) {
   const [histories, setHistories] = useState([])
+  const [historyMeta, setHistoryMeta] = useState({
+    limit: isVipUser(auth) ? 80 : 20,
+    canFavorite: isVipUser(auth),
+  })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   useEffect(() => {
     let isMounted = true
 
-    fetchWithAuth('/history?limit=50', auth)
+    fetchWithAuth('/history', auth)
       .then((data) => {
         if (isMounted) {
-          setHistories(Array.isArray(data) ? data : [])
+          if (Array.isArray(data)) {
+            setHistories(data)
+            return
+          }
+
+          setHistories(Array.isArray(data.histories) ? data.histories : [])
+          setHistoryMeta({
+            limit: data.limit || (isVipUser(auth) ? 80 : 20),
+            canFavorite: Boolean(data.canFavorite),
+          })
         }
       })
       .catch((err) => {
@@ -887,12 +963,51 @@ function HistoryListPage({ auth }) {
     }
   }, [auth])
 
+  const toggleFavorite = async (event, history) => {
+    event.preventDefault()
+    event.stopPropagation()
+    setError('')
+
+    try {
+      const updatedHistory = await fetchWithAuth(
+        `/history/${history._id}/favorite`,
+        auth,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            isFavorite: !history.isFavorite,
+          }),
+        },
+      )
+
+      setHistories((items) =>
+        items
+          .map((item) => (item._id === updatedHistory._id ? updatedHistory : item))
+          .sort((a, b) => {
+            if (Number(Boolean(b.isFavorite)) !== Number(Boolean(a.isFavorite))) {
+              return Number(Boolean(b.isFavorite)) - Number(Boolean(a.isFavorite))
+            }
+
+            return new Date(b.createdAt) - new Date(a.createdAt)
+          }),
+      )
+    } catch (err) {
+      setError(err.message || 'Failed to update favorite')
+    }
+  }
+
   return (
     <main className="app-shell">
       <section className="history-header">
         <div>
           <p className="eyebrow">Search history</p>
           <h1>Your saved agent searches.</h1>
+          <p className="history-plan">
+            {isVipUser(auth) ? 'VIP' : 'Free'} history keeps up to {historyMeta.limit} searches.
+          </p>
         </div>
         <Link className="secondary-link" to="/">
           Back to search
@@ -926,13 +1041,25 @@ function HistoryListPage({ auth }) {
               <div>
                 <span className="history-date">
                   {formatDateTime(history.createdAt)}
+                  {history.isFavorite && <span className="favorite-label">Saved</span>}
                 </span>
                 <h2>{history.query}</h2>
                 {history.resultSummary && <p>{history.resultSummary}</p>}
               </div>
-              <span className="history-count">
-                {history.requestMeta?.resultCount ?? history.results?.length ?? 0} results
-              </span>
+              <div className="history-actions">
+                {historyMeta.canFavorite && (
+                  <button
+                    type="button"
+                    className={history.isFavorite ? 'favorite-button active' : 'favorite-button'}
+                    onClick={(event) => toggleFavorite(event, history)}
+                  >
+                    {history.isFavorite ? 'Saved' : 'Save'}
+                  </button>
+                )}
+                <span className="history-count">
+                  {history.requestMeta?.resultCount ?? history.results?.length ?? 0} results
+                </span>
+              </div>
             </Link>
           ))}
       </section>
@@ -945,6 +1072,7 @@ function HistoryDetailPage({ auth }) {
   const [history, setHistory] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const canFavorite = isVipUser(auth)
 
   useEffect(() => {
     let isMounted = true
@@ -971,6 +1099,34 @@ function HistoryDetailPage({ auth }) {
     }
   }, [auth, id])
 
+  const toggleFavorite = async () => {
+    if (!history) {
+      return
+    }
+
+    try {
+      setError('')
+
+      const updatedHistory = await fetchWithAuth(
+        `/history/${history._id}/favorite`,
+        auth,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            isFavorite: !history.isFavorite,
+          }),
+        },
+      )
+
+      setHistory(updatedHistory)
+    } catch (err) {
+      setError(err.message || 'Failed to update favorite')
+    }
+  }
+
   return (
     <main className="app-shell">
       <section className="history-header">
@@ -981,9 +1137,20 @@ function HistoryDetailPage({ auth }) {
             <p className="intro">{formatDateTime(history.createdAt)}</p>
           )}
         </div>
-        <Link className="secondary-link" to="/history">
-          Back to history
-        </Link>
+        <div className="history-detail-actions">
+          {canFavorite && history && (
+            <button
+              type="button"
+              className={history.isFavorite ? 'favorite-button active' : 'favorite-button'}
+              onClick={toggleFavorite}
+            >
+              {history.isFavorite ? 'Saved' : 'Save'}
+            </button>
+          )}
+          <Link className="secondary-link" to="/history">
+            Back to history
+          </Link>
+        </div>
       </section>
 
       {error && <div className="error-box">{error}</div>}
@@ -1013,12 +1180,103 @@ function HistoryDetailPage({ auth }) {
   )
 }
 
-function AppRoutes() {
-  const [auth, setAuth] = useState(() => readStoredAuth())
+function VipPage({ auth, onAuthenticated }) {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const isVip = isVipUser(auth)
+  const vipExpiresAt = auth.user?.vipExpiresAt
+    ? formatDateTime(auth.user.vipExpiresAt)
+    : ''
 
+  const activateVip = async () => {
+    try {
+      setLoading(true)
+      setError('')
+
+      const data = await fetchWithAuth('/auth/vip', auth, {
+        method: 'POST',
+      })
+
+      saveStoredAuth(data)
+      onAuthenticated(data)
+    } catch (err) {
+      setError(err.message || 'VIP activation failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <main className="app-shell">
+      <section className="vip-panel">
+        <div className="vip-hero-copy">
+          <p className="eyebrow">Agent Search VIP</p>
+          <h1>{isVip ? 'Your VIP is active.' : 'Upgrade to VIP.'}</h1>
+          <p className="intro">
+            VIP expands daily search capacity, keeps more history, unlocks saved
+            history records, and removes sponsored placements from the search
+            experience.
+          </p>
+          {isVip && vipExpiresAt && (
+            <p className="vip-expiry">Active until {vipExpiresAt}</p>
+          )}
+
+          <div className="vip-feature-list">
+            <div>
+              <strong>50 searches per day</strong>
+              <span>Free accounts include 8 daily searches; guests include 2.</span>
+            </div>
+            <div>
+              <strong>80 history records</strong>
+              <span>VIP keeps up to 80 recent searches, compared with 20 on Free.</span>
+            </div>
+            <div>
+              <strong>Saved history</strong>
+              <span>Mark important history records as saved so cleanup will not remove them.</span>
+            </div>
+            <div>
+              <strong>No ads</strong>
+              <span>Hide sponsored panels and the persistent ad bar while signed in as VIP.</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="vip-action-panel">
+          <div className="vip-subscription-card">
+            <div className="vip-price-card">
+              <span>Monthly plan</span>
+              <strong>$12</strong>
+              <p>per month</p>
+            </div>
+
+            <div className="vip-status-row">
+              <span>Status</span>
+              <strong>{isVip ? 'VIP' : 'Free'}</strong>
+            </div>
+            <p className="vip-status-note">
+              {isVip ? 'Ads are hidden for this account.' : 'Ads are currently visible.'}
+            </p>
+
+            {error && <div className="auth-error">{error}</div>}
+
+            <button type="button" onClick={activateVip} disabled={loading || isVip}>
+              {loading ? 'Activating' : isVip ? 'VIP active' : 'Activate VIP'}
+            </button>
+            <Link className="secondary-link" to="/">
+              Back to search
+            </Link>
+          </div>
+        </div>
+
+      </section>
+    </main>
+  )
+}
+
+function AppRoutes({ auth, onAuthChange }) {
   const logout = () => {
     clearStoredAuth()
-    setAuth(null)
+    onAuthChange(null)
   }
 
   return (
@@ -1026,21 +1284,19 @@ function AppRoutes() {
       <Route
         path="/login"
         element={
-          <AuthPage auth={auth} mode="login" onAuthenticated={setAuth} />
+          <AuthPage auth={auth} mode="login" onAuthenticated={onAuthChange} />
         }
       />
       <Route
         path="/register"
         element={
-          <AuthPage auth={auth} mode="register" onAuthenticated={setAuth} />
+          <AuthPage auth={auth} mode="register" onAuthenticated={onAuthChange} />
         }
       />
       <Route
         path="/"
         element={
-          <ProtectedRoute auth={auth}>
-            <SearchPage auth={auth} onLogout={logout} />
-          </ProtectedRoute>
+          <SearchPage auth={auth} onLogout={logout} />
         }
       />
       <Route
@@ -1059,16 +1315,26 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
+      <Route
+        path="/vip"
+        element={
+          <ProtectedRoute auth={auth}>
+            <VipPage auth={auth} onAuthenticated={onAuthChange} />
+          </ProtectedRoute>
+        }
+      />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
 }
 
 function App() {
+  const [auth, setAuth] = useState(() => readStoredAuth())
+
   return (
     <BrowserRouter>
-      <AppRoutes />
-      <PersistentAdBar />
+      <AppRoutes auth={auth} onAuthChange={setAuth} />
+      {!isVipUser(auth) && <PersistentAdBar />}
     </BrowserRouter>
   )
 }

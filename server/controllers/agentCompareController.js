@@ -1,5 +1,7 @@
 const { invokeLiveCompareGraph } = require("../graph");
 const { UserHistory } = require("../models");
+const { enforceHistoryLimit } = require("../services/historyRetentionService");
+const { consumeSearchQuota } = require("../services/searchQuotaService");
 
 function toNumberOrNull(value) {
   const numberValue = Number(value);
@@ -87,6 +89,7 @@ async function saveSearchHistory(req, result) {
       resultSummary: createResultSummary(results),
       results: createHistoryResults(results),
     });
+    await enforceHistoryLimit(req.user);
   } catch (err) {
     console.error("Save search history error:", err);
   }
@@ -98,6 +101,24 @@ async function search(req, res) {
   const lng = req.query.lng;
 
   try {
+    const quota = await consumeSearchQuota(req);
+
+    res.set({
+      "X-Search-Plan": quota.plan,
+      "X-Search-Limit": String(quota.limit),
+      "X-Search-Remaining": String(quota.remaining),
+    });
+
+    if (!quota.allowed) {
+      return res.status(429).json({
+        error:
+          quota.plan === "anonymous"
+            ? "Anonymous daily search limit reached. Sign in to get 8 searches per day."
+            : "Daily search limit reached.",
+        quota,
+      });
+    }
+
     const result = await invokeLiveCompareGraph({
       userInput,
       lat,

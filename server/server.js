@@ -58,7 +58,9 @@ app.get("/agent-search", optionalAuth, agentCompareController.search);
 app.get("/ads", advertisementController.list);
 app.post("/auth/register", authController.register);
 app.post("/auth/login", authController.login);
+app.post("/auth/vip", requireAuth, authController.activateVip);
 app.get("/history", requireAuth, historyController.list);
+app.patch("/history/:id/favorite", requireAuth, historyController.updateFavorite);
 app.get("/history/:id", requireAuth, historyController.getById);
 
 app.use((req, res) => {

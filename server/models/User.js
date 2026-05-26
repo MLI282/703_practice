@@ -32,6 +32,16 @@ const userSchema = new mongoose.Schema(
       default: "active",
       index: true,
     },
+    membership: {
+      type: String,
+      enum: ["free", "vip"],
+      default: "free",
+      index: true,
+    },
+    vipExpiresAt: {
+      type: Date,
+      default: null,
+    },
     lastLoginAt: {
       type: Date,
       default: null,

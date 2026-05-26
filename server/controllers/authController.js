@@ -6,12 +6,20 @@ function normalizeEmail(email) {
 }
 
 function sanitizeUser(user) {
+  const vipExpiresAt = user.vipExpiresAt || null;
+  const isVip =
+    user.membership === "vip" &&
+    (!vipExpiresAt || new Date(vipExpiresAt) > new Date());
+
   return {
     id: String(user._id),
     username: user.username,
     email: user.email,
     role: user.role,
     status: user.status,
+    membership: isVip ? "vip" : "free",
+    vipExpiresAt,
+    isVip,
     lastLoginAt: user.lastLoginAt,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
@@ -19,15 +27,17 @@ function sanitizeUser(user) {
 }
 
 function createAuthResponse(user) {
+  const sanitizedUser = sanitizeUser(user);
   const token = signToken({
     sub: String(user._id),
     email: user.email,
     role: user.role,
+    membership: sanitizedUser.membership,
   });
 
   return {
     token,
-    user: sanitizeUser(user),
+    user: sanitizedUser,
   };
 }
 
@@ -131,7 +141,35 @@ async function login(req, res) {
   }
 }
 
+async function activateVip(req, res) {
+  try {
+    const vipExpiresAt = new Date();
+    vipExpiresAt.setDate(vipExpiresAt.getDate() + 30);
+
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      {
+        membership: "vip",
+        vipExpiresAt,
+      },
+      {
+        new: true,
+      }
+    );
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found." });
+    }
+
+    res.json(createAuthResponse(user));
+  } catch (err) {
+    console.error("Activate VIP error:", err);
+    res.status(500).json({ error: "VIP activation failed." });
+  }
+}
+
 module.exports = {
   register,
   login,
+  activateVip,
 };

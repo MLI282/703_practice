@@ -35,6 +35,15 @@ const userHistorySchema = new mongoose.Schema(
       type: [mongoose.Schema.Types.Mixed],
       default: [],
     },
+    isFavorite: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    favoritedAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,
@@ -43,5 +52,6 @@ const userHistorySchema = new mongoose.Schema(
 );
 
 userHistorySchema.index({ user: 1, createdAt: -1 });
+userHistorySchema.index({ user: 1, isFavorite: 1, createdAt: -1 });
 
 module.exports = mongoose.model("UserHistory", userHistorySchema);

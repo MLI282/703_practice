@@ -5,6 +5,7 @@ const {
   UserInfo,
   ShoppingCache,
   Advertisement,
+  SearchUsage,
 } = require("../models");
 const DEFAULT_ADVERTISEMENTS = require("../seeds/advertisements.data");
 
@@ -68,6 +69,7 @@ async function ensureMongoCollections() {
     UserInfo.createCollection(),
     ShoppingCache.createCollection(),
     Advertisement.createCollection(),
+    SearchUsage.createCollection(),
   ]);
 
   for (const advertisement of DEFAULT_ADVERTISEMENTS) {
@@ -93,6 +95,7 @@ async function ensureMongoCollections() {
     UserInfo.syncIndexes(),
     ShoppingCache.syncIndexes(),
     Advertisement.syncIndexes(),
+    SearchUsage.syncIndexes(),
   ]);
 }
 

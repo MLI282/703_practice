@@ -1,4 +1,5 @@
 const deepseek = require("../../config/deepseekClient");
+const redditClient = require("../../config/redditClient");
 const placesService = require("../../services/placesService");
 const shoppingService = require("../../services/shoppingService");
 
@@ -7,6 +8,57 @@ const PRODUCT_RESULT_LIMIT = 8;
 const DEFAULT_COMPARE_REASON = "Matched from live search results.";
 const DEFAULT_BEST_FOR = "overall match";
 const DEFAULT_DISTANCE_KM = 20;
+const REDDIT_ANALYSIS_LIMIT = 6;
+const REDDIT_QUERY_LIMIT = 5;
+
+const REDDIT_QUERY_STOPWORDS = new Set([
+  "the",
+  "and",
+  "for",
+  "restaurant",
+  "restaurants",
+  "cafe",
+  "cafes",
+  "bar",
+  "food",
+  "store",
+  "shop",
+  "market",
+  "new",
+  "zealand",
+]);
+
+const ADDRESS_STOPWORDS = new Set([
+  "street",
+  "st",
+  "road",
+  "rd",
+  "avenue",
+  "ave",
+  "drive",
+  "dr",
+  "lane",
+  "ln",
+  "queen",
+  "new",
+  "zealand",
+]);
+
+const PRODUCT_QUERY_STOPWORDS = new Set([
+  "the",
+  "and",
+  "for",
+  "with",
+  "from",
+  "best",
+  "buy",
+  "cheap",
+  "under",
+  "nzd",
+  "new",
+  "zealand",
+  "product",
+]);
 
 function cleanJsonText(text) {
   return text.replace(/```json/g, "").replace(/```/g, "").trim();
@@ -372,6 +424,13 @@ function normalizeText(value) {
   return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+function tokenizeForReddit(value, stopwords = REDDIT_QUERY_STOPWORDS) {
+  return normalizeText(value)
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(" ")
+    .filter((term) => term.length >= 3 && !stopwords.has(term));
+}
+
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
@@ -515,6 +574,453 @@ function buildPlaceBestFor(item, state) {
   }
 
   return DEFAULT_BEST_FOR;
+}
+
+function buildLocalFallbackReason(item, state) {
+  if (state.category === "product") {
+    const details = [];
+
+    if (item.price) {
+      details.push(`listed at ${item.price}`);
+    }
+
+    if (item.source) {
+      details.push(`sold via ${item.source}`);
+    }
+
+    if (item.nearby_store) {
+      details.push(`available near ${item.nearby_store}`);
+    }
+
+    const evidence = details.length
+      ? details.slice(0, 2).join(", ")
+      : "limited seller signals";
+
+    return `Reddit discussion is limited; the clearest product signals are ${evidence}.`;
+  }
+
+  const intent = state.placeIntent || state.parsedPreferences?.place_intent || {};
+  const useCase = intent.use_case || intent.keywords || state.userInput || "this request";
+  const details = [];
+
+  if (item.rating) {
+    const reviewText = item.user_ratings_total
+      ? ` across ${item.user_ratings_total} Google reviews`
+      : " on Google";
+    details.push(`${item.rating}/5${reviewText}`);
+  }
+
+  if (item.distance_text) {
+    details.push(`${item.distance_text} away`);
+  }
+
+  if (item.open_now === true) {
+    details.push("currently open");
+  }
+
+  const evidence = details.length
+    ? details.slice(0, 2).join(", ")
+    : "limited public signals";
+
+  return `Reddit discussion is limited; for ${useCase}, the clearest signals are ${evidence}.`;
+}
+
+function getAddressTerms(address) {
+  return String(address || "")
+    .split(",")
+    .slice(0, 3)
+    .flatMap((part) => tokenizeForReddit(part, ADDRESS_STOPWORDS))
+    .filter((term) => !/^\d+$/.test(term));
+}
+
+function getLocalityTerms(item) {
+  const addressTerms = getAddressTerms(item.address);
+  const preferredLocalityTerms = addressTerms.filter((term) =>
+    /auckland|wellington|christchurch|hamilton|dunedin|tauranga|cbd|ponsonby|parnell|newmarket|takapuna|remuera|eden|viaduct|grey|lynn|mt|mount/.test(term)
+  );
+
+  return preferredLocalityTerms.length
+    ? preferredLocalityTerms.slice(0, 3)
+    : addressTerms.slice(0, 2);
+}
+
+function buildRedditSearchQueries(item, state) {
+  if (state.category === "product") {
+    const title = String(item.title || "").trim();
+    const productTerms = tokenizeForReddit(title, PRODUCT_QUERY_STOPWORDS)
+      .slice(0, 8)
+      .join(" ");
+    const userTerms = tokenizeForReddit(state.userInput, PRODUCT_QUERY_STOPWORDS)
+      .slice(0, 6)
+      .join(" ");
+
+    return [
+      `"${title}" review`,
+      `"${title}" reddit`,
+      `${productTerms} review reddit`,
+      `${productTerms} problems`,
+      `${userTerms || productTerms} recommendations reddit`,
+    ]
+      .map((query) => query.replace(/\s+/g, " ").trim())
+      .filter(Boolean)
+      .slice(0, REDDIT_QUERY_LIMIT);
+  }
+
+  const intent = state.placeIntent || state.parsedPreferences?.place_intent || {};
+  const title = String(item.title || "").trim();
+  const localityTerms = getLocalityTerms(item);
+  const locality = localityTerms.join(" ");
+  const intentTerms = [
+    intent.food_cuisine,
+    intent.place_type,
+    ...(Array.isArray(intent.features) ? intent.features.slice(0, 2) : []),
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return [
+    `"${title}" ${locality}`,
+    `${title} ${locality}`,
+    `${title} ${intentTerms} ${locality}`,
+    `best ${intentTerms || "places"} ${locality}`,
+    `${intent.use_case || intentTerms || state.userInput} ${locality}`,
+  ]
+    .map((query) => query.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .slice(0, REDDIT_QUERY_LIMIT);
+}
+
+function getPostText(post) {
+  const comments = Array.isArray(post.comments)
+    ? post.comments.map((comment) => comment.body).join(" ")
+    : "";
+
+  return normalizeText(`${post.title} ${post.selftext || ""} ${comments}`);
+}
+
+function scoreRedditRelevance(post, item, state) {
+  const text = getPostText(post);
+
+  if (state.category === "product") {
+    const titleTokens = tokenizeForReddit(item.title, PRODUCT_QUERY_STOPWORDS);
+    const userTokens = tokenizeForReddit(state.userInput, PRODUCT_QUERY_STOPWORDS);
+    const titleMatches = titleTokens.filter((term) => text.includes(term)).length;
+    const userMatches = userTokens.filter((term) => text.includes(term)).length;
+    const exactTitleMatch =
+      item.title && text.includes(normalizeText(item.title)) ? 1 : 0;
+
+    return exactTitleMatch * 8 + titleMatches * 3 + Math.min(userMatches, 3);
+  }
+
+  const titleTokens = tokenizeForReddit(item.title);
+  const localityTerms = getLocalityTerms(item);
+  const intent = state.placeIntent || state.parsedPreferences?.place_intent || {};
+  const intentTokens = tokenizeForReddit(
+    [intent.food_cuisine, intent.place_type, intent.use_case].filter(Boolean).join(" ")
+  );
+
+  const titleMatches = titleTokens.filter((term) => text.includes(term)).length;
+  const localityMatches = localityTerms.filter((term) => text.includes(term)).length;
+  const intentMatches = intentTokens.filter((term) => text.includes(term)).length;
+  const exactTitleMatch =
+    item.title && text.includes(normalizeText(item.title)) ? 1 : 0;
+
+  return (
+    exactTitleMatch * 6 +
+    titleMatches * 3 +
+    localityMatches * 2 +
+    Math.min(intentMatches, 2)
+  );
+}
+
+function filterRelevantRedditPosts(posts, item, state) {
+  if (state.category === "product") {
+    const titleTokens = tokenizeForReddit(item.title, PRODUCT_QUERY_STOPWORDS);
+    const minMatches = titleTokens.length <= 2 ? 1 : 2;
+
+    return posts
+      .map((post) => {
+        const text = getPostText(post);
+        const titleMatches = titleTokens.filter((term) => text.includes(term)).length;
+        const exactTitleMatch =
+          item.title && text.includes(normalizeText(item.title)) ? 1 : 0;
+        const isProductSpecific =
+          Boolean(exactTitleMatch) || titleMatches >= minMatches;
+
+        return {
+          ...post,
+          evidenceScope: isProductSpecific ? "product_specific" : "product_category",
+          relevanceScore: scoreRedditRelevance(post, item, state),
+          isRelevant:
+            isProductSpecific ||
+            (titleMatches >= 1 &&
+              /review|problem|issue|recommend|worth|quality|battery|performance|price|buy/.test(text)),
+        };
+      })
+      .filter((post) => post.isRelevant)
+      .sort((a, b) => b.relevanceScore - a.relevanceScore || b.score - a.score)
+      .slice(0, 4);
+  }
+
+  const titleTokens = tokenizeForReddit(item.title);
+  const intent = state.placeIntent || state.parsedPreferences?.place_intent || {};
+  const localityTerms = getLocalityTerms(item);
+  const intentTokens = tokenizeForReddit(
+    [intent.food_cuisine, intent.place_type, intent.use_case].filter(Boolean).join(" ")
+  );
+
+  return posts
+    .map((post) => {
+      const text = getPostText(post);
+      const titleMatches = titleTokens.filter((term) => text.includes(term)).length;
+      const localityMatches = localityTerms.filter((term) => text.includes(term)).length;
+      const intentMatches = intentTokens.filter((term) => text.includes(term)).length;
+      const exactTitleMatch =
+        item.title && text.includes(normalizeText(item.title)) ? 1 : 0;
+      const isPlaceSpecific =
+        Boolean(exactTitleMatch) ||
+        (titleTokens.length > 1 && titleMatches >= Math.min(2, titleTokens.length));
+      const isLocalCategory =
+        !isPlaceSpecific &&
+        localityMatches >= 1 &&
+        (intentMatches >= 1 || /recommend|best|where|food|eat|restaurant|cafe|place|places/.test(text));
+
+      return {
+        ...post,
+        evidenceScope: isPlaceSpecific ? "place_specific" : "local_category",
+        relevanceScore: scoreRedditRelevance(post, item, state),
+        isRelevant: isPlaceSpecific || isLocalCategory,
+      };
+    })
+    .filter((post) => post.isRelevant)
+    .sort((a, b) => b.relevanceScore - a.relevanceScore || b.score - a.score)
+    .slice(0, 4);
+}
+
+function compactRedditEvidence(posts) {
+  return posts
+    .map((post) => ({
+      title: post.title,
+      subreddit: post.subreddit,
+      score: post.score,
+      relevanceScore: post.relevanceScore,
+      evidenceScope: post.evidenceScope,
+      comments: post.comments
+        .slice(0, 4)
+        .map((comment) => comment.body.slice(0, 360)),
+    }))
+    .filter((post) => post.title || post.comments.length);
+}
+
+async function buildRedditAnalysisMap(items, state) {
+  const evidence = await Promise.all(
+    items.map(async (item) => {
+      const queries = buildRedditSearchQueries(item, state);
+
+      try {
+        const postGroups = await Promise.all(
+          queries.map((query) =>
+            redditClient.searchRedditWithComments(query, {
+              postLimit: 2,
+              commentLimit: 4,
+            })
+          )
+        );
+        const postsById = new Map();
+
+        postGroups.flat().forEach((post) => {
+          if (!postsById.has(post.id)) {
+            postsById.set(post.id, post);
+          }
+        });
+
+        const posts = filterRelevantRedditPosts(
+          Array.from(postsById.values()),
+          item,
+          state
+        );
+        const commentCount = posts.reduce(
+          (total, post) => total + post.comments.length,
+          0
+        );
+
+        return {
+          index: item.index,
+          title: item.title,
+          queries,
+          postCount: posts.length,
+          commentCount,
+          googleSignals: {
+            rating: item.rating ?? null,
+            reviews: item.user_ratings_total ?? null,
+            distance: item.distance_text || null,
+          },
+          productSignals: {
+            price: item.price || null,
+            source: item.source || null,
+            nearbyStore: item.nearby_store || null,
+            storeRating: item.store_rating ?? null,
+          },
+          reddit: compactRedditEvidence(posts),
+        };
+      } catch (err) {
+        return {
+          index: item.index,
+          title: item.title,
+          queries,
+          postCount: 0,
+          commentCount: 0,
+          googleSignals: {
+            rating: item.rating ?? null,
+            reviews: item.user_ratings_total ?? null,
+            distance: item.distance_text || null,
+          },
+          productSignals: {
+            price: item.price || null,
+            source: item.source || null,
+            nearbyStore: item.nearby_store || null,
+            storeRating: item.store_rating ?? null,
+          },
+          reddit: [],
+        };
+      }
+    })
+  );
+
+  if (!evidence.some((item) => item.reddit.length)) {
+    return new Map();
+  }
+
+  const fallback = {
+    analyses: evidence.map((item) => ({
+      index: item.index,
+      compare_reason: "",
+    })),
+  };
+  const targetType = state.category === "product" ? "product" : "place";
+  const evidenceRules =
+    state.category === "product"
+      ? `
+- Evidence has an evidenceScope field.
+- If evidenceScope is "product_specific", you may describe what Reddit users say about the named product.
+- If evidenceScope is "product_category", use it only as category context; do not claim it is about the exact product.
+- Prefer practical pros and cons: quality, reliability, performance, battery, fit, price, value, durability, support, or common complaints.
+- If Reddit evidence is thin, say "Public discussion is limited" and use seller signals carefully.
+`
+      : `
+- Evidence has an evidenceScope field.
+- If evidenceScope is "place_specific", you may describe what Reddit users say about the named place.
+- If evidenceScope is "local_category", use it only as local context for that type of place; do not claim it is about the named place.
+- Prefer practical pros and cons: quality, price, crowding, service, ambience, convenience, or reliability.
+- If Reddit evidence is thin, say "Public discussion is limited" and use Google signals carefully.
+`;
+
+  const parsed = await invokeDeepSeekJson(
+    `
+You write concise, objective ${targetType} summaries from Reddit comments.
+
+User request:
+${state.userInput}
+
+For each ${targetType}, use Reddit evidence first. Use structured product/place signals only as secondary context.
+Return ONLY valid JSON:
+{
+  "analyses": [
+    {
+      "index": number,
+      "compare_reason": "English, one sentence, max 34 words, balanced pros and cons, no hype, no ranking claims"
+    }
+  ]
+}
+
+Rules:
+- Do not change or discuss ranking.
+- Do not mention Reddit if there is no useful Reddit evidence for that ${targetType}.
+- If evidence is mixed, say it is mixed.
+- Avoid unsupported claims.
+${evidenceRules}
+
+Items and evidence:
+${JSON.stringify(evidence, null, 2)}
+`,
+    fallback
+  );
+
+  return new Map(
+    (parsed.analyses || [])
+      .filter((item) => item.compare_reason)
+      .map((item) => [
+        Number(item.index),
+        String(item.compare_reason).trim(),
+      ])
+  );
+}
+
+async function redditAnalysisNode(state) {
+  console.time("redditAnalysisNode");
+
+  if (state.category !== "product" || !state.comparisons.length) {
+    console.timeEnd("redditAnalysisNode");
+
+    return {};
+  }
+
+  const candidateByIndex = new Map(
+    state.normalizedCandidates.map((item) => [Number(item.index), item])
+  );
+
+  const topItems = [...state.comparisons]
+    .sort((a, b) => Number(a.compare_rank || 999999) - Number(b.compare_rank || 999999))
+    .slice(0, REDDIT_ANALYSIS_LIMIT)
+    .map((comparison) => candidateByIndex.get(Number(comparison.index)))
+    .filter(Boolean);
+
+  let analysisByIndex = new Map();
+
+  try {
+    analysisByIndex = await buildRedditAnalysisMap(topItems, state);
+  } catch (err) {
+    console.error("Reddit analysis failed:", err?.response?.data || err.message || err);
+  }
+
+  const fallbackByIndex = new Map(
+    topItems.map((item) => [
+      Number(item.index),
+      buildLocalFallbackReason(item, state),
+    ])
+  );
+
+  const comparisons = state.comparisons.map((comparison) => {
+    const index = Number(comparison.index);
+    const nextReason = analysisByIndex.get(index) || fallbackByIndex.get(index);
+
+    if (!nextReason) {
+      return comparison;
+    }
+
+    return {
+      ...comparison,
+      compare_reason: nextReason,
+    };
+  });
+
+  const changedCount = comparisons.filter((comparison) => {
+    const original = state.comparisons.find(
+      (item) => Number(item.index) === Number(comparison.index)
+    );
+
+    return original?.compare_reason !== comparison.compare_reason;
+  }).length;
+
+  console.log(
+    `[reddit_product_analysis] candidates=${topItems.length} reddit_summaries=${analysisByIndex.size} updated=${changedCount}`
+  );
+
+  console.timeEnd("redditAnalysisNode");
+
+  return {
+    comparisons,
+  };
 }
 
 function scoreProductCandidate(item) {
@@ -687,5 +1193,6 @@ module.exports = {
   fetchCandidatesNode,
   normalizeCandidatesNode,
   compareCandidatesNode,
+  redditAnalysisNode,
   formatResponseNode,
 };
