@@ -15,6 +15,7 @@ const agentCompareController = require("./controllers/agentCompareController");
 const advertisementController = require("./controllers/advertisementController");
 const authController = require("./controllers/authController");
 const historyController = require("./controllers/historyController");
+const llmController = require("./controllers/llmController");
 const {
   optionalAuth,
   requireAuth,
@@ -50,12 +51,13 @@ app.use(
 app.use(express.json());
 
 app.get("/", homeController.index);
-app.get("/search", placesController.search);
+app.get("/search", optionalAuth, placesController.search);
 app.get("/reverse-geocode", placesController.reverseGeocode);
-app.get("/route", routeController.getRoute);
+app.get("/route", optionalAuth, routeController.getRoute);
 app.get("/shop-search", optionalAuth, shoppingController.search);
 app.get("/agent-search", optionalAuth, agentCompareController.search);
 app.get("/ads", advertisementController.list);
+app.get("/llm/models", llmController.listModels);
 app.post("/auth/register", authController.register);
 app.post("/auth/login", authController.login);
 app.post("/auth/vip", requireAuth, authController.activateVip);

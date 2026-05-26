@@ -19,6 +19,7 @@ const DEFAULT_LOCATION = {
   lng: 174.7633,
 }
 const PRODUCT_RESULT_LIMIT = 8
+const DEFAULT_LLM_MODEL = 'deepseek-chat'
 
 let googleMapsLoader
 
@@ -721,9 +722,14 @@ function SearchPage({ auth, onLogout }) {
   const [location, setLocation] = useState(DEFAULT_LOCATION)
   const [locationStatus, setLocationStatus] = useState('Using Auckland fallback')
   const [quota, setQuota] = useState(null)
+  const [llmModels, setLlmModels] = useState([
+    { key: DEFAULT_LLM_MODEL, label: 'DeepSeek Chat' },
+  ])
+  const [selectedModel, setSelectedModel] = useState(DEFAULT_LLM_MODEL)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const isVip = isVipUser(auth)
+  const activeModel = isVip ? selectedModel : DEFAULT_LLM_MODEL
 
   useEffect(() => {
     if (!navigator.geolocation) {
@@ -742,6 +748,44 @@ function SearchPage({ auth, onLogout }) {
         setLocationStatus('Using Auckland fallback')
       },
     )
+  }, [])
+
+  useEffect(() => {
+    if (!isVip && selectedModel !== DEFAULT_LLM_MODEL) {
+      setSelectedModel(DEFAULT_LLM_MODEL)
+    }
+  }, [isVip, selectedModel])
+
+  useEffect(() => {
+    let isMounted = true
+
+    fetch(`${API_BASE}/llm/models`)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error('Model list request failed')
+        }
+
+        return response.json()
+      })
+      .then((data) => {
+        if (!isMounted) {
+          return
+        }
+
+        const models = Array.isArray(data.models) ? data.models : []
+
+        if (models.length) {
+          setLlmModels(models)
+          setSelectedModel(data.defaultModel || models[0].key)
+        }
+      })
+      .catch((err) => {
+        console.error('LLM models failed to load:', err)
+      })
+
+    return () => {
+      isMounted = false
+    }
   }, [])
 
   const recommendation = useMemo(() => {
@@ -771,7 +815,7 @@ function SearchPage({ auth, onLogout }) {
       const response = await fetch(
         `${API_BASE}/agent-search?q=${encodeURIComponent(query)}&lat=${
           location.lat
-        }&lng=${location.lng}`,
+        }&lng=${location.lng}&model=${encodeURIComponent(activeModel)}`,
         {
           headers,
         },
@@ -854,6 +898,19 @@ function SearchPage({ auth, onLogout }) {
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Try: compare nearby cheap cafes, or buy a laptop under 1500 NZD"
           />
+          <select
+            value={selectedModel}
+            onChange={(event) => setSelectedModel(event.target.value)}
+            disabled={!isVip}
+            aria-label="Model"
+            title={isVip ? 'Choose model' : 'VIP required to switch models'}
+          >
+            {llmModels.map((model) => (
+              <option key={model.key} value={model.key}>
+                {model.label}
+              </option>
+            ))}
+          </select>
           <button type="submit" disabled={loading}>
             {loading ? 'Comparing' : 'Search'}
           </button>
@@ -1227,12 +1284,14 @@ function VipPage({ auth, onAuthenticated }) {
               <span>Free accounts include 8 daily searches; guests include 2.</span>
             </div>
             <div>
-              <strong>80 history records</strong>
-              <span>VIP keeps up to 80 recent searches, compared with 20 on Free.</span>
+              <strong>80 history records and Saved history</strong>
+              <span>VIP keeps up to 80 recent searches, compared with 20 on Free.
+              Mark important history records as saved so cleanup will not remove them.</span>
+              
             </div>
             <div>
-              <strong>Saved history</strong>
-              <span>Mark important history records as saved so cleanup will not remove them.</span>
+              <strong>Changeable LLM Model</strong>
+              <span>The free plan just can use the Deepseek model, VIP can choose the model they want like Chatgpt, more models coming soon</span>
             </div>
             <div>
               <strong>No ads</strong>
@@ -1255,6 +1314,21 @@ function VipPage({ auth, onAuthenticated }) {
             </div>
             <p className="vip-status-note">
               {isVip ? 'Ads are hidden for this account.' : 'Ads are currently visible.'}
+          
+            </p>
+            <p className='vip-status-note'>
+              {isVip ? 'VIP functions are actived.' : 'Free and limited functions.'}
+            </p>
+            <p className='vip-status-note'>
+              {isVip ? '50 questions per day.' : 'Only 8 questions perday.'}
+
+            </p>
+            <p className='vip-status-note'>
+              {isVip ? 'More history records.' : 'Limited history records'}
+            </p>
+            <p className='vip-status-note'>
+              {isVip ? 'Changeable Model.' : 'Default Model.'}
+
             </p>
 
             {error && <div className="auth-error">{error}</div>}

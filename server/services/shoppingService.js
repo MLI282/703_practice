@@ -1,5 +1,5 @@
 const axios = require("axios");
-const deepseek = require("../config/deepseekClient");
+const llmClient = require("../config/llmClient");
 const serpSearch = require("../config/serpClient");
 const { GOOGLE_API_KEY } = require("../config/apiKeys");
 const { ShoppingCache } = require("../models");
@@ -266,8 +266,8 @@ function normalizeIntent(parsed, userInput) {
   };
 }
 
-async function parseShoppingIntent(userInput) {
-  const cacheKey = makeCacheKey("intent", [userInput]);
+async function parseShoppingIntent(userInput, llmModel) {
+  const cacheKey = makeCacheKey("intent", [userInput, llmModel || "default"]);
   const cachedIntent = await readCache(cacheKey);
 
   if (cachedIntent) {
@@ -286,8 +286,8 @@ async function parseShoppingIntent(userInput) {
 
   console.time("deepseek_shopping_parse");
 
-  const response = await deepseek.chat.completions.create({
-    model: "deepseek-chat",
+  const response = await llmClient.createChatCompletion({
+    modelKey: llmModel,
     temperature: 0,
     messages: [
       {
@@ -646,11 +646,11 @@ function buildBestFor(result, intent) {
   return "overall match";
 }
 
-async function searchShopping({ userInput, lat, lng }) {
+async function searchShopping({ userInput, lat, lng, llmModel }) {
   console.time("shopping_total");
 
   console.time("shopping_intent");
-  const parsed = await parseShoppingIntent(userInput);
+  const parsed = await parseShoppingIntent(userInput, llmModel);
   console.timeEnd("shopping_intent");
 
   console.log("Shopping intent:", parsed);

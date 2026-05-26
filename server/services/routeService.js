@@ -1,5 +1,5 @@
 const axios = require("axios");
-const deepseek = require("../config/deepseekClient");
+const llmClient = require("../config/llmClient");
 const { GOOGLE_ROUTE_API_KEY } = require("../config/apiKeys");
 
 function serviceError(code) {
@@ -29,9 +29,9 @@ async function geocode(place) {
   }
 }
 
-async function getRoute(userInput) {
-  const aiResponse = await deepseek.chat.completions.create({
-    model: "deepseek-chat",
+async function getRoute(userInput, llmModel) {
+  const aiResponse = await llmClient.createChatCompletion({
+    modelKey: llmModel,
     messages: [
       {
         role: "system",

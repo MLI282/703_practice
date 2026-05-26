@@ -2,6 +2,7 @@ const shoppingService = require("../services/shoppingService");
 const { UserHistory } = require("../models");
 const { enforceHistoryLimit } = require("../services/historyRetentionService");
 const { consumeSearchQuota } = require("../services/searchQuotaService");
+const { requireModelAccess } = require("../services/modelAccessService");
 
 function toNumberOrNull(value) {
   const numberValue = Number(value);
@@ -76,6 +77,11 @@ async function search(req, res) {
   const userInput = req.query.q;
   const lat = req.query.lat;
   const lng = req.query.lng;
+  const llmModel = requireModelAccess(req, res);
+
+  if (!llmModel) {
+    return;
+  }
 
   try {
     const quota = await consumeSearchQuota(req);
@@ -100,6 +106,7 @@ async function search(req, res) {
       userInput,
       lat,
       lng,
+      llmModel,
     });
 
     res.json(results);

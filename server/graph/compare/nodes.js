@@ -1,4 +1,4 @@
-const deepseek = require("../../config/deepseekClient");
+const llmClient = require("../../config/llmClient");
 const { loadProducts, loadPlaces } = require("../tools/dataLoader");
 
 function cleanJsonText(text) {
@@ -6,8 +6,7 @@ function cleanJsonText(text) {
 }
 
 async function invokeDeepSeek(prompt) {
-  const response = await deepseek.chat.completions.create({
-    model: "deepseek-chat",
+  const response = await llmClient.createChatCompletion({
     messages: [
       {
         role: "user",

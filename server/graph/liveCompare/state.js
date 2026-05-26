@@ -13,6 +13,10 @@ const LiveCompareState = Annotation.Root({
     value: (left, right) => right ?? left,
     default: () => null,
   }),
+  llmModel: Annotation({
+    value: (left, right) => right ?? left,
+    default: () => null,
+  }),
   category: Annotation({
     value: (left, right) => right ?? left,
     default: () => "place",

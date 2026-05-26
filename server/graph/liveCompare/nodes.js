@@ -1,4 +1,4 @@
-const deepseek = require("../../config/deepseekClient");
+const llmClient = require("../../config/llmClient");
 const redditClient = require("../../config/redditClient");
 const placesService = require("../../services/placesService");
 const shoppingService = require("../../services/shoppingService");
@@ -8,8 +8,11 @@ const PRODUCT_RESULT_LIMIT = 8;
 const DEFAULT_COMPARE_REASON = "Matched from live search results.";
 const DEFAULT_BEST_FOR = "overall match";
 const DEFAULT_DISTANCE_KM = 20;
-const REDDIT_ANALYSIS_LIMIT = 6;
-const REDDIT_QUERY_LIMIT = 5;
+const REDDIT_ANALYSIS_LIMIT = 3;
+const REDDIT_QUERY_LIMIT = 3;
+const REDDIT_POST_LIMIT = 3;
+const REDDIT_COMMENT_LIMIT = 3;
+const REDDIT_RELEVANT_POST_LIMIT = 2;
 
 const REDDIT_QUERY_STOPWORDS = new Set([
   "the",
@@ -86,9 +89,9 @@ function guessCategory(userInput) {
     : "place";
 }
 
-async function invokeDeepSeekJson(prompt, fallback) {
-  const response = await deepseek.chat.completions.create({
-    model: "deepseek-chat",
+async function invokeLlmJson(prompt, fallback, modelKey) {
+  const response = await llmClient.createChatCompletion({
+    modelKey,
     temperature: 0,
     messages: [
       {
@@ -133,7 +136,7 @@ async function analyzeInputNode(state) {
 
   console.time("deepseek_intent_classification");
 
-  const parsed = await invokeDeepSeekJson(
+  const parsed = await invokeLlmJson(
     `
 You are an assistant that classifies a user's local search or shopping request and extracts any place-search intent in one pass.
 
@@ -170,7 +173,8 @@ Rules:
 - Do not force restaurant or cafe when the user asks for libraries, parks, museums, gyms, pharmacies, attractions, shops, or services.
 - Do not explain.
 `,
-    fallback
+    fallback,
+    state.llmModel
   );
 
   console.timeEnd("deepseek_intent_classification");
@@ -237,7 +241,7 @@ async function analyzePlaceIntentNode(state) {
 
   console.time("deepseek_place_analysis");
 
-  const parsed = await invokeDeepSeekJson(
+  const parsed = await invokeLlmJson(
     `
 You analyze what kind of PLACE the user is looking for.
 
@@ -256,7 +260,8 @@ Return ONLY valid JSON:
   "use_case": "short description of why the user wants this place"
 }
 `,
-    fallback
+    fallback,
+    state.llmModel
   );
 
   console.timeEnd("deepseek_place_analysis");
@@ -288,6 +293,7 @@ async function fetchCandidatesNode(state) {
       userInput: state.userInput,
       lat: state.lat,
       lng: state.lng,
+      llmModel: state.llmModel,
     });
 
     console.timeEnd("shopping_api");
@@ -308,6 +314,7 @@ async function fetchCandidatesNode(state) {
       ...(state.placeIntent || {}),
       ranking_focus: state.parsedPreferences?.ranking_focus || [],
     },
+    llmModel: state.llmModel,
   });
 
   console.timeEnd("places_api");
@@ -759,7 +766,7 @@ function filterRelevantRedditPosts(posts, item, state) {
       })
       .filter((post) => post.isRelevant)
       .sort((a, b) => b.relevanceScore - a.relevanceScore || b.score - a.score)
-      .slice(0, 4);
+      .slice(0, REDDIT_RELEVANT_POST_LIMIT);
   }
 
   const titleTokens = tokenizeForReddit(item.title);
@@ -794,7 +801,7 @@ function filterRelevantRedditPosts(posts, item, state) {
     })
     .filter((post) => post.isRelevant)
     .sort((a, b) => b.relevanceScore - a.relevanceScore || b.score - a.score)
-    .slice(0, 4);
+    .slice(0, REDDIT_RELEVANT_POST_LIMIT);
 }
 
 function compactRedditEvidence(posts) {
@@ -806,8 +813,8 @@ function compactRedditEvidence(posts) {
       relevanceScore: post.relevanceScore,
       evidenceScope: post.evidenceScope,
       comments: post.comments
-        .slice(0, 4)
-        .map((comment) => comment.body.slice(0, 360)),
+        .slice(0, REDDIT_COMMENT_LIMIT)
+        .map((comment) => comment.body.slice(0, 240)),
     }))
     .filter((post) => post.title || post.comments.length);
 }
@@ -820,10 +827,11 @@ async function buildRedditAnalysisMap(items, state) {
       try {
         const postGroups = await Promise.all(
           queries.map((query) =>
-            redditClient.searchRedditWithComments(query, {
-              postLimit: 2,
-              commentLimit: 4,
-            })
+            redditClient
+              .searchRedditPosts(query, {
+                limit: REDDIT_POST_LIMIT,
+              })
+              .catch(() => [])
           )
         );
         const postsById = new Map();
@@ -834,10 +842,22 @@ async function buildRedditAnalysisMap(items, state) {
           }
         });
 
-        const posts = filterRelevantRedditPosts(
+        const relevantPosts = filterRelevantRedditPosts(
           Array.from(postsById.values()),
           item,
           state
+        );
+        const posts = await Promise.all(
+          relevantPosts.map(async (post) => {
+            const comments = await redditClient.fetchPostComments(post.permalink, {
+              limit: REDDIT_COMMENT_LIMIT,
+            }).catch(() => []);
+
+            return {
+              ...post,
+              comments,
+            };
+          })
         );
         const commentCount = posts.reduce(
           (total, post) => total + post.comments.length,
@@ -915,7 +935,7 @@ async function buildRedditAnalysisMap(items, state) {
 - If Reddit evidence is thin, say "Public discussion is limited" and use Google signals carefully.
 `;
 
-  const parsed = await invokeDeepSeekJson(
+  const parsed = await invokeLlmJson(
     `
 You write concise, objective ${targetType} summaries from Reddit comments.
 
@@ -943,7 +963,8 @@ ${evidenceRules}
 Items and evidence:
 ${JSON.stringify(evidence, null, 2)}
 `,
-    fallback
+    fallback,
+    state.llmModel
   );
 
   return new Map(

@@ -1,7 +1,8 @@
 const axios = require("axios");
 
 const REDDIT_BASE_URL = "https://www.reddit.com";
-const DEFAULT_TIMEOUT_MS = 4500;
+const DEFAULT_TIMEOUT_MS = 3000;
+const CACHE_TTL_MS = Number(process.env.REDDIT_CACHE_TTL_MS) || 10 * 60 * 1000;
 const DEFAULT_USER_AGENT =
   process.env.REDDIT_USER_AGENT ||
   "agent-search/1.0 (local academic project)";
@@ -14,6 +15,26 @@ const reddit = axios.create({
     Accept: "application/json",
   },
 });
+
+const responseCache = new Map();
+
+function getCacheValue(key) {
+  const cached = responseCache.get(key);
+
+  if (!cached || cached.expiresAt < Date.now()) {
+    responseCache.delete(key);
+    return null;
+  }
+
+  return cached.value;
+}
+
+function setCacheValue(key, value) {
+  responseCache.set(key, {
+    value,
+    expiresAt: Date.now() + CACHE_TTL_MS,
+  });
+}
 
 function cleanText(value) {
   return String(value || "")
@@ -38,6 +59,13 @@ async function searchRedditPosts(query, options = {}) {
     return [];
   }
 
+  const cacheKey = `search:${query}:${limit}`;
+  const cachedPosts = getCacheValue(cacheKey);
+
+  if (cachedPosts) {
+    return cachedPosts;
+  }
+
   const response = await reddit.get("/search.json", {
     params: {
       q: query,
@@ -50,7 +78,7 @@ async function searchRedditPosts(query, options = {}) {
 
   const posts = response.data?.data?.children || [];
 
-  return posts
+  const normalizedPosts = posts
     .map((post) => ({
       id: post.data?.id,
       title: cleanText(post.data?.title),
@@ -61,6 +89,10 @@ async function searchRedditPosts(query, options = {}) {
       selftext: cleanText(post.data?.selftext),
     }))
     .filter((post) => post.id && post.permalink);
+
+  setCacheValue(cacheKey, normalizedPosts);
+
+  return normalizedPosts;
 }
 
 function flattenCommentTree(children, comments = []) {
@@ -95,6 +127,13 @@ async function fetchPostComments(permalink, options = {}) {
   }
 
   const limit = options.limit || 6;
+  const cacheKey = `comments:${permalink}:${limit}`;
+  const cachedComments = getCacheValue(cacheKey);
+
+  if (cachedComments) {
+    return cachedComments;
+  }
+
   const response = await reddit.get(`${permalink}.json`, {
     params: {
       sort: "confidence",
@@ -107,6 +146,8 @@ async function fetchPostComments(permalink, options = {}) {
   const comments = flattenCommentTree(commentChildren)
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
+
+  setCacheValue(cacheKey, comments);
 
   return comments;
 }

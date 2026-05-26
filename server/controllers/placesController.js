@@ -1,15 +1,22 @@
 const placesService = require("../services/placesService");
+const { requireModelAccess } = require("../services/modelAccessService");
 
 async function search(req, res) {
   const lat = req.query.lat;
   const lng = req.query.lng;
   const userInput = req.query.q;
+  const llmModel = requireModelAccess(req, res);
+
+  if (!llmModel) {
+    return;
+  }
 
   try {
     const results = await placesService.searchPlaces({
       lat,
       lng,
       userInput,
+      llmModel,
     });
 
     res.json(results);

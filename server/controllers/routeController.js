@@ -1,10 +1,16 @@
 const routeService = require("../services/routeService");
+const { requireModelAccess } = require("../services/modelAccessService");
 
 async function getRoute(req, res) {
   const userInput = req.query.q;
+  const llmModel = requireModelAccess(req, res);
+
+  if (!llmModel) {
+    return;
+  }
 
   try {
-    const result = await routeService.getRoute(userInput);
+    const result = await routeService.getRoute(userInput, llmModel);
     res.json(result);
   } catch (err) {
     if (err.code === "NO_ROUTE_FOUND") {

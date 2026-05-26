@@ -1,5 +1,5 @@
 const axios = require("axios");
-const deepseek = require("../config/deepseekClient");
+const llmClient = require("../config/llmClient");
 const { GOOGLE_API_KEY } = require("../config/apiKeys");
 const { ShoppingCache } = require("../models");
 
@@ -446,7 +446,7 @@ function buildParsedFromPlaceIntent(placeIntent) {
   };
 }
 
-async function searchPlaces({ lat, lng, userInput, placeIntent }) {
+async function searchPlaces({ lat, lng, userInput, placeIntent, llmModel }) {
   let parsed = buildParsedFromPlaceIntent(placeIntent);
 
   if (!parsed) {
@@ -458,8 +458,8 @@ async function searchPlaces({ lat, lng, userInput, placeIntent }) {
   }
 
   if (!parsed) {
-    const aiResponse = await deepseek.chat.completions.create({
-    model: "deepseek-chat",
+    const aiResponse = await llmClient.createChatCompletion({
+    modelKey: llmModel,
     messages: [
       {
         role: "system",

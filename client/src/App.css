@@ -229,12 +229,13 @@ h1 {
 
 .search-form {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) 190px auto;
   gap: 12px;
   max-width: 860px;
 }
 
-.search-form input {
+.search-form input,
+.search-form select {
   min-width: 0;
   height: 52px;
   box-sizing: border-box;
@@ -247,7 +248,18 @@ h1 {
   outline: none;
 }
 
-.search-form input:focus {
+.search-form select {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.search-form select:disabled {
+  cursor: default;
+  opacity: 0.72;
+}
+
+.search-form input:focus,
+.search-form select:focus {
   border-color: #9b5200;
   box-shadow: 0 0 0 3px rgba(255, 136, 0, 0.24);
 }
