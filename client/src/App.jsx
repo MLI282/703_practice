@@ -20,6 +20,11 @@ const DEFAULT_LOCATION = {
 }
 const PRODUCT_RESULT_LIMIT = 8
 const DEFAULT_LLM_MODEL = 'deepseek-chat'
+const PROMPT_SUGGESTIONS = [
+  'Give me some advice for dinner',
+  'Give me destinations not product',
+  'Give me product advice',
+]
 
 let googleMapsLoader
 
@@ -844,6 +849,14 @@ function SearchPage({ auth, onLogout }) {
     }
   }
 
+  const appendPromptSuggestion = (suggestion) => {
+    setQuery((currentQuery) => {
+      const trimmedQuery = currentQuery.trimEnd()
+
+      return trimmedQuery ? `${trimmedQuery} ${suggestion}` : suggestion
+    })
+  }
+
   const logout = () => {
     clearStoredAuth()
     onLogout()
@@ -915,6 +928,18 @@ function SearchPage({ auth, onLogout }) {
             {loading ? 'Comparing' : 'Search'}
           </button>
         </form>
+
+        <div className="prompt-suggestions" aria-label="Prompt suggestions">
+          {PROMPT_SUGGESTIONS.map((suggestion) => (
+            <button
+              key={suggestion}
+              type="button"
+              onClick={() => appendPromptSuggestion(suggestion)}
+            >
+              {suggestion}
+            </button>
+          ))}
+        </div>
 
         <div className="meta-row">
           <span>{locationStatus}</span>

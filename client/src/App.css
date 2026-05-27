@@ -281,6 +281,31 @@ h1 {
   opacity: 0.68;
 }
 
+.prompt-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  max-width: 860px;
+}
+
+.prompt-suggestions button {
+  min-height: 40px;
+  padding: 0 13px;
+  border: 1px solid rgba(85, 44, 0, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.58);
+  color: #4f2d00;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.prompt-suggestions button:hover,
+.prompt-suggestions button:focus-visible {
+  border-color: rgba(85, 44, 0, 0.34);
+  background: rgba(255, 255, 255, 0.84);
+}
+
 .meta-row {
   display: flex;
   flex-wrap: wrap;
@@ -1158,6 +1183,15 @@ h1 {
   }
 
   .search-form button {
+    width: 100%;
+  }
+
+  .prompt-suggestions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .prompt-suggestions button {
     width: 100%;
   }
 
