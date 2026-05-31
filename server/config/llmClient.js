@@ -1,19 +1,19 @@
 const OpenAI = require("openai");
 const { DEEPSEEK_API_KEY } = require("./apiKeys");
 
-const DEFAULT_MODEL_KEY = "deepseek-chat";
+const DEFAULT_MODEL_KEY = "deepseek-v4-flash";
 const MODEL_OPTIONS = [
   {
-    key: "deepseek-chat",
-    label: "DeepSeek Chat",
+    key: "deepseek-v4-flash",
+    label: "DeepSeek V4 Flash",
     provider: "deepseek",
-    model: "deepseek-chat",
+    model: "deepseek-v4-flash",
   },
   {
-    key: "deepseek-reasoner",
-    label: "DeepSeek Reasoner",
+    key: "deepseek-v4-pro",
+    label: "DeepSeek V4 Pro",
     provider: "deepseek",
-    model: "deepseek-reasoner",
+    model: "deepseek-v4-pro",
   },
   {
     key: "chatgpt",

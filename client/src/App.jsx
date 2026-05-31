@@ -19,7 +19,7 @@ const DEFAULT_LOCATION = {
   lng: 174.7633,
 }
 const PRODUCT_RESULT_LIMIT = 8
-const DEFAULT_LLM_MODEL = 'deepseek-chat'
+const DEFAULT_LLM_MODEL = 'deepseek-v4-flash'
 const PROMPT_SUGGESTIONS = [
   'Give me some advice for dinner',
   'Give me destinations not product',
@@ -728,7 +728,7 @@ function SearchPage({ auth, onLogout }) {
   const [locationStatus, setLocationStatus] = useState('Using Auckland fallback')
   const [quota, setQuota] = useState(null)
   const [llmModels, setLlmModels] = useState([
-    { key: DEFAULT_LLM_MODEL, label: 'DeepSeek Chat' },
+    { key: DEFAULT_LLM_MODEL, label: 'DeepSeek V4 Flash' },
   ])
   const [selectedModel, setSelectedModel] = useState(DEFAULT_LLM_MODEL)
   const [loading, setLoading] = useState(false)
