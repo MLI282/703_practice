@@ -20,11 +20,7 @@ function hashValue(value) {
 }
 
 function getClientIp(req) {
-  const forwardedFor = String(req.headers["x-forwarded-for"] || "")
-    .split(",")[0]
-    .trim();
-
-  return forwardedFor || req.ip || req.socket?.remoteAddress || "unknown";
+  return req.ip || req.socket?.remoteAddress || "unknown";
 }
 
 function getQuotaIdentity(req) {

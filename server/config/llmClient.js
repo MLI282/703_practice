@@ -2,6 +2,7 @@ const OpenAI = require("openai");
 const { DEEPSEEK_API_KEY } = require("./apiKeys");
 
 const DEFAULT_MODEL_KEY = "deepseek-v4-flash";
+const LLM_TIMEOUT_MS = Number(process.env.LLM_TIMEOUT_MS) || 15000;
 const MODEL_OPTIONS = [
   {
     key: "deepseek-v4-flash",
@@ -26,6 +27,7 @@ const MODEL_OPTIONS = [
 const deepseek = new OpenAI({
   apiKey: DEEPSEEK_API_KEY,
   baseURL: "https://api.deepseek.com",
+  timeout: LLM_TIMEOUT_MS,
 });
 
 let openai;
@@ -38,6 +40,7 @@ function getOpenAIClient() {
   if (!openai) {
     openai = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
+      timeout: LLM_TIMEOUT_MS,
     });
   }
 

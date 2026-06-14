@@ -2,6 +2,7 @@ require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
+const axios = require("axios");
 const {
   connectMongo,
   ensureMongoCollections,
@@ -20,13 +21,39 @@ const {
   optionalAuth,
   requireAuth,
 } = require("./middleware/authMiddleware");
+const {
+  coordinateQuerySchema,
+  createRateLimiter,
+  favoriteBodySchema,
+  historyParamsSchema,
+  loginBodySchema,
+  protectVipActivation,
+  registerBodySchema,
+  routeQuerySchema,
+  searchQuerySchema,
+  securityHeaders,
+  validate,
+} = require("./middleware/securityMiddleware");
+const { assertSecurityConfiguration } = require("./utils/auth");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const EXTERNAL_REQUEST_TIMEOUT_MS =
+  Number(process.env.EXTERNAL_REQUEST_TIMEOUT_MS) || 10000;
 const DEFAULT_ALLOWED_ORIGINS = [
   "http://localhost:5173",
   "http://127.0.0.1:5173",
 ];
+
+axios.defaults.timeout = EXTERNAL_REQUEST_TIMEOUT_MS;
+
+if (process.env.TRUST_PROXY) {
+  const trustProxy = /^\d+$/.test(process.env.TRUST_PROXY)
+    ? Number(process.env.TRUST_PROXY)
+    : process.env.TRUST_PROXY;
+
+  app.set("trust proxy", trustProxy);
+}
 
 function getAllowedOrigins() {
   const configuredOrigins = (process.env.CORS_ORIGINS || "")
@@ -37,6 +64,24 @@ function getAllowedOrigins() {
   return configuredOrigins.length ? configuredOrigins : DEFAULT_ALLOWED_ORIGINS;
 }
 
+const generalRateLimit = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+});
+const authRateLimit = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: "Too many authentication attempts. Please try again later.",
+});
+const externalApiRateLimit = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 30,
+  message: "Too many search requests. Please try again shortly.",
+});
+
+app.disable("x-powered-by");
+app.use(securityHeaders);
+app.use(generalRateLimit);
 app.use(
   cors({
     origin(origin, callback) {
@@ -48,22 +93,77 @@ app.use(
     },
   })
 );
-app.use(express.json());
+app.use(express.json({ limit: "32kb", strict: true }));
 
 app.get("/", homeController.index);
-app.get("/search", optionalAuth, placesController.search);
-app.get("/reverse-geocode", placesController.reverseGeocode);
-app.get("/route", optionalAuth, routeController.getRoute);
-app.get("/shop-search", optionalAuth, shoppingController.search);
-app.get("/agent-search", optionalAuth, agentCompareController.search);
+app.get(
+  "/search",
+  validate("query", searchQuerySchema),
+  optionalAuth,
+  externalApiRateLimit,
+  placesController.search
+);
+app.get(
+  "/reverse-geocode",
+  validate("query", coordinateQuerySchema),
+  externalApiRateLimit,
+  placesController.reverseGeocode
+);
+app.get(
+  "/route",
+  validate("query", routeQuerySchema),
+  optionalAuth,
+  externalApiRateLimit,
+  routeController.getRoute
+);
+app.get(
+  "/shop-search",
+  validate("query", searchQuerySchema),
+  optionalAuth,
+  externalApiRateLimit,
+  shoppingController.search
+);
+app.get(
+  "/agent-search",
+  validate("query", searchQuerySchema),
+  optionalAuth,
+  externalApiRateLimit,
+  agentCompareController.search
+);
 app.get("/ads", advertisementController.list);
 app.get("/llm/models", llmController.listModels);
-app.post("/auth/register", authController.register);
-app.post("/auth/login", authController.login);
-app.post("/auth/vip", requireAuth, authController.activateVip);
+app.post(
+  "/auth/register",
+  authRateLimit,
+  validate("body", registerBodySchema),
+  authController.register
+);
+app.post(
+  "/auth/login",
+  authRateLimit,
+  validate("body", loginBodySchema),
+  authController.login
+);
+app.post(
+  "/auth/vip",
+  requireAuth,
+  protectVipActivation,
+  authController.activateVip
+);
 app.get("/history", requireAuth, historyController.list);
-app.patch("/history/:id/favorite", requireAuth, historyController.updateFavorite);
-app.get("/history/:id", requireAuth, historyController.getById);
+app.patch(
+  "/history/:id/favorite",
+  requireAuth,
+  validate("params", historyParamsSchema),
+  validate("body", favoriteBodySchema),
+  historyController.updateFavorite
+);
+app.get(
+  "/history/:id",
+  requireAuth,
+  validate("params", historyParamsSchema),
+  historyController.getById
+);
 
 app.use((req, res) => {
   res.status(404).json({
@@ -72,14 +172,23 @@ app.use((req, res) => {
 });
 
 app.use((err, req, res, next) => {
+  if (err?.type === "entity.too.large") {
+    return res.status(413).json({ error: "Request body is too large." });
+  }
+
+  if (err instanceof SyntaxError && err.status === 400 && "body" in err) {
+    return res.status(400).json({ error: "Malformed JSON body." });
+  }
+
   console.error("Unhandled server error:", err);
-  res.status(500).json({
+  return res.status(500).json({
     error: "Internal server error.",
   });
 });
 
 async function startServer() {
   try {
+    assertSecurityConfiguration();
     await connectMongo();
     await ensureMongoCollections();
 

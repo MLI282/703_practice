@@ -12,6 +12,7 @@
   "scripts": {
     "dev": "node --watch server.js",
     "start": "node server.js",
+    "test": "node --test test/*.test.js",
     "seed:ads": "node seeds/advertisements.seed.js"
   },
   "keywords": [],

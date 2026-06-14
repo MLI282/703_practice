@@ -73,3 +73,53 @@ routes. Existing fields are preserved, and comparison metadata is appended:
   agent_recommendation: "..."
 }
 ```
+
+## Trust and Robustness
+
+The security layer is implemented at the Express boundary so valid requests
+still use the existing controllers, services, ranking logic, and graph nodes.
+
+Current controls:
+
+- Search text is required and limited to 500 characters.
+- Latitude and longitude must be finite and within geographic ranges.
+- Registration, login, history IDs, and favorite updates are schema-validated.
+- JSON request bodies are limited to 32 KB.
+- General, authentication, and external-API routes have short-window rate
+  limits in addition to the existing daily search quota.
+- Anonymous rate-limit and quota identities use Express `req.ip`. Forwarded
+  headers are trusted only when `TRUST_PROXY` is explicitly configured.
+- Browser-facing security headers disable framing, MIME sniffing, and
+  unnecessary browser capabilities.
+- Outbound Axios and LLM requests have deadlines.
+- Production startup fails when `JWT_SECRET` is missing or shorter than 32
+  characters.
+- The demo `/auth/vip` activation route is disabled by default in production.
+
+Run the security regression suite:
+
+```bash
+cd server
+npm test
+```
+
+The suite covers valid request compatibility, empty and oversized input,
+invalid coordinates, spoofed forwarding headers, burst requests, production
+JWT configuration, response headers, and production VIP activation.
+
+### Residual Risks
+
+- Rate limiting is process-local. A commercial multi-instance deployment
+  should use a shared Redis-backed limiter.
+- User and third-party text is still supplied to an LLM. JSON parsing and local
+  fallbacks limit some malformed output, but prompt injection and recommendation
+  quality require an adversarial evaluation dataset before commercial release.
+- Google place photo URLs currently include the configured API key. Production
+  deployments should restrict that key by API and origin, or proxy photo
+  requests through a dedicated endpoint.
+- The system depends on Google, LLM, Reddit, SerpAPI, and MongoDB availability.
+  Timeouts bound individual waits, but retries, circuit breakers, and measured
+  service-level objectives are not yet implemented.
+- External product, website, image, and advertisement URLs should be treated as
+  untrusted. A future hardening pass should enforce an HTTP/HTTPS allowlist at
+  ingestion and rendering boundaries.

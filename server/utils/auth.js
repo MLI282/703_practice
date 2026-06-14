@@ -18,7 +18,25 @@ function base64UrlDecode(value) {
 }
 
 function getJwtSecret() {
-  return process.env.JWT_SECRET || "development-only-change-this-secret";
+  const secret = process.env.JWT_SECRET;
+
+  if (secret) {
+    return secret;
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("JWT_SECRET is required in production.");
+  }
+
+  return "development-only-change-this-secret";
+}
+
+function assertSecurityConfiguration() {
+  const secret = getJwtSecret();
+
+  if (process.env.NODE_ENV === "production" && secret.length < 32) {
+    throw new Error("JWT_SECRET must be at least 32 characters in production.");
+  }
 }
 
 function hashPassword(password) {
@@ -132,6 +150,7 @@ function verifyToken(token) {
 }
 
 module.exports = {
+  assertSecurityConfiguration,
   hashPassword,
   verifyPassword,
   signToken,
