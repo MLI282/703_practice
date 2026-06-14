@@ -13,6 +13,7 @@ import './App.css'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001'
 const AUTH_STORAGE_KEY = 'agent_search_auth'
+const AUTH_EXPIRED_EVENT = 'agent-search-auth-expired'
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''
 const DEFAULT_LOCATION = {
   lat: -36.8485,
@@ -59,8 +60,16 @@ function loadGoogleMaps() {
 
 function readStoredAuth() {
   try {
-    return JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY)) || null
+    const auth = JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY)) || null
+
+    if (auth?.token && getTokenExpiresAt(auth.token) <= Date.now()) {
+      clearStoredAuth()
+      return null
+    }
+
+    return auth
   } catch {
+    clearStoredAuth()
     return null
   }
 }
@@ -71,6 +80,27 @@ function saveStoredAuth(auth) {
 
 function clearStoredAuth() {
   localStorage.removeItem(AUTH_STORAGE_KEY)
+}
+
+function getTokenExpiresAt(token) {
+  try {
+    const payloadSegment = String(token || '').split('.')[1]
+    const normalized = payloadSegment.replace(/-/g, '+').replace(/_/g, '/')
+    const payload = JSON.parse(atob(normalized))
+
+    return Number(payload.exp) * 1000 || 0
+  } catch {
+    return 0
+  }
+}
+
+function expireAuthSession(auth) {
+  if (!auth?.token) {
+    return
+  }
+
+  clearStoredAuth()
+  window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
 }
 
 function isVipUser(auth) {
@@ -106,6 +136,10 @@ async function fetchWithAuth(path, auth, options = {}) {
   const data = contentType.includes('application/json')
     ? await response.json()
     : { error: await response.text() }
+
+  if (response.status === 401) {
+    expireAuthSession(auth)
+  }
 
   if (!response.ok) {
     throw new Error(data.error || 'Request failed')
@@ -836,6 +870,10 @@ function SearchPage({ auth, onLogout }) {
         setQuota(nextQuota)
       }
 
+      if (response.status === 401) {
+        expireAuthSession(auth)
+      }
+
       if (!response.ok) {
         throw new Error(data.error || 'Agent search failed')
       }
@@ -1429,6 +1467,39 @@ function AppRoutes({ auth, onAuthChange }) {
 
 function App() {
   const [auth, setAuth] = useState(() => readStoredAuth())
+
+  useEffect(() => {
+    const handleExpiredAuth = () => {
+      setAuth(null)
+    }
+
+    window.addEventListener(AUTH_EXPIRED_EVENT, handleExpiredAuth)
+
+    return () => {
+      window.removeEventListener(AUTH_EXPIRED_EVENT, handleExpiredAuth)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!auth?.token) {
+      return undefined
+    }
+
+    const expiresIn = getTokenExpiresAt(auth.token) - Date.now()
+
+    if (expiresIn <= 0) {
+      expireAuthSession(auth)
+      return undefined
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      expireAuthSession(auth)
+    }, expiresIn)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+    }
+  }, [auth])
 
   return (
     <BrowserRouter>
